@@ -25,6 +25,16 @@ MAX_ROWS_PER_TICKER = 400  # keeps tool output a sensible size for the LLM
 Interval = Literal["1d", "1wk", "1mo"]
 READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 
+
+def _quality_warnings(info: dict[str, Any]) -> list[str]:
+    """Warnings for bad Yahoo prices that were dropped before computing."""
+    return [
+        f"{sym}: dropped {len(d)} bad price(s) that jumped and fully reversed "
+        f"next period (Yahoo data error): {', '.join(d)}"
+        for sym, d in info.get("removed_bad_prices", {}).items()
+    ]
+
+
 # kept for backwards compatibility with earlier imports
 _clean_tickers = data.clean_symbols
 _num = an.num
@@ -90,7 +100,15 @@ def get_price_history(
         if base_currency:
             result[sym]["currency"] = base_currency.upper()
             result[sym]["quote_currency"] = info["currencies"].get(sym)
-    return {"interval": interval, "start": start_date, "end": end_date, "data": result}
+    out: dict[str, Any] = {
+        "interval": interval,
+        "start": start_date,
+        "end": end_date,
+        "data": result,
+    }
+    if info["removed_bad_prices"]:
+        out["removed_bad_prices"] = info["removed_bad_prices"]
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -361,7 +379,7 @@ def get_performance_stats(
     bench = data.clean_symbols([benchmark])[0] if benchmark else None
     wanted = symbols + ([bench] if bench and bench not in symbols else [])
     try:
-        close, _ = data.prices_in_currency(
+        close, info = data.prices_in_currency(
             wanted, start_date, end_date, interval, base_currency
         )
     except YahooError as exc:
@@ -388,8 +406,15 @@ def get_performance_stats(
         "risk_free_rate_pct": risk_free_rate_pct,
         "stats": stats,
     }
+    warnings = _quality_warnings(info)
     if bench and not has_bench:
-        out["warnings"] = [f"benchmark {bench} returned no data"]
+        warnings.append(f"benchmark {bench} returned no data")
+    if has_bench:
+        tz = data.async_close_warning(list(close.columns), interval)
+        if tz:
+            warnings.append(tz)
+    if warnings:
+        out["warnings"] = warnings
     return out
 
 
@@ -440,6 +465,12 @@ def get_correlation(
     }
     if info["missing"]:
         out["missing"] = info["missing"]
+    warnings = _quality_warnings(info)
+    tz = data.async_close_warning(list(aligned.columns), interval)
+    if tz:
+        warnings.append(tz)
+    if warnings:
+        out["warnings"] = warnings
     return out
 
 

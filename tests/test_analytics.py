@@ -55,6 +55,28 @@ def test_to_base_currency_errors_on_missing_fx():
         an.to_base_currency(prices, {"X": None}, pd.DataFrame(), "EUR")
 
 
+# ------------------------------------------------------------------ data quality
+def test_remove_spikes_drops_reversed_jumps_only():
+    idx = pd.date_range("2025-10-20", periods=8, freq="B")
+    prices = pd.DataFrame(
+        {
+            # the real SWDA.L print of 24 Oct 2025
+            "SWDA.L": [9512, 9536, 9498, 9564, 12837.81, 9720, 9796, 9846],
+            # a genuine 30% jump that sticks (e.g. a takeover) is kept
+            "TAKEOVER": [10, 10, 10, 13, 13.1, 13.2, 13.1, 13.3],
+            # a dip-and-recover inside the threshold is kept
+            "NORMAL": [100, 95, 100, 96, 101, 99, 100, 102],
+        },
+        index=idx,
+        dtype=float,
+    )
+    cleaned, removed = an.remove_spikes(prices)
+    assert removed == {"SWDA.L": ["2025-10-24"]}
+    assert np.isnan(cleaned.loc["2025-10-24", "SWDA.L"])
+    assert cleaned["TAKEOVER"].equals(prices["TAKEOVER"])
+    assert cleaned["NORMAL"].equals(prices["NORMAL"])
+
+
 # ------------------------------------------------------------------ calendar
 def test_align_prices_fills_holidays_and_trims_to_common_window():
     idx = pd.date_range("2026-01-01", periods=5, freq="D")

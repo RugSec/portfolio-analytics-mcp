@@ -100,6 +100,51 @@ def to_base_currency(
     return pd.DataFrame(out, index=prices.index)
 
 
+# ------------------------------------------------------------------ data quality
+def remove_spikes(
+    prices: pd.DataFrame, threshold: float = 0.15
+) -> tuple[pd.DataFrame, dict[str, list[str]]]:
+    """Drop one-day bad prints: a jump that is fully reversed the next period.
+
+    A price is treated as bad when it moves more than ``threshold`` from the
+    previous price, the next price moves back by a similar amount in the other
+    direction, and the next price is close to the previous one. Yahoo has such
+    prints on some listings (e.g. a London ETF recorded once in US cents
+    instead of pence). Real moves that stick are kept. The last price cannot
+    be checked (there is no next one).
+
+    Returns:
+        ``(cleaned prices, {symbol: [removed dates]})``; removed prices become
+        NaN, which ``align_prices`` later forward-fills.
+    """
+    cleaned = prices.copy()
+    removed: dict[str, list[str]] = {}
+    for col in cleaned.columns:
+        s = cleaned[col].dropna()
+        v = np.array(s, dtype=float)  # writable copy (pandas 3 is copy-on-write)
+        bad: list[int] = []
+        i = 1
+        while i < len(v) - 1:
+            prev = v[i - 1]
+            up = v[i] / prev - 1
+            back = v[i + 1] / v[i] - 1
+            if (
+                abs(up) > threshold
+                and up * back < 0
+                and abs(v[i + 1] / prev - 1) < threshold / 3
+            ):
+                bad.append(i)
+                v[i] = prev  # so the next comparison uses a sane base
+                i += 2
+                continue
+            i += 1
+        if bad:
+            dates = [s.index[j] for j in bad]
+            cleaned.loc[dates, col] = np.nan
+            removed[str(col)] = [day(d) for d in dates]
+    return cleaned, removed
+
+
 # ------------------------------------------------------------------ calendar
 def align_prices(prices: pd.DataFrame, max_gap: int = 5) -> pd.DataFrame:
     """Put series from different exchanges on one calendar.

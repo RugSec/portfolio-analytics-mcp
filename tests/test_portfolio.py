@@ -55,6 +55,12 @@ def fake_yahoo(monkeypatch):
     monkeypatch.setattr(
         data, "get_currencies", lambda syms: {s: CURRENCIES.get(s) for s in syms}
     )
+    zones = {"AAPL": "America/New_York", "SPY": "America/New_York"}
+    monkeypatch.setattr(
+        data,
+        "get_timezones",
+        lambda syms: {s: zones.get(s, "Europe/Berlin") for s in syms},
+    )
     monkeypatch.setattr(data, "yahoo_reachable", lambda: True)
     return calls
 
@@ -128,6 +134,7 @@ def test_portfolio_values_in_base_currency(fake_yahoo):
         ],
         base_currency="EUR",
         benchmark="SPY",
+        interval="1d",
     )
     rows = {r["symbol"]: r for r in out["positions"]}
     aapl_eur = 10 * PRICES["AAPL"][-1] * 0.9
@@ -145,6 +152,7 @@ def test_portfolio_values_in_base_currency(fake_yahoo):
     assert set(out["correlation"]) == {"AAPL", "VUSA.L", "EUNL.DE"}
     assert out["fx_rates_used"] == {"GBPEUR": 1.2, "USDEUR": 0.9}
     assert any("minor units" in w for w in out["warnings"])
+    assert any("time zones (America, Europe)" in w for w in out["warnings"])
 
 
 def test_portfolio_isin_falls_back_to_next_listing(fake_yahoo, monkeypatch):
@@ -258,3 +266,16 @@ def test_isin_errors_are_classified(fake_yahoo, monkeypatch):
     assert (
         risk._justetf_code(JustEtfError("'X' is not a valid ISIN")) == "invalid_input"
     )
+
+
+def test_portfolio_drops_bad_prints(fake_yahoo, monkeypatch):
+    bad = PRICES["EUNL.DE"].copy()
+    bad[300] *= 1.34  # e.g. a London quote once recorded in US cents
+    monkeypatch.setitem(PRICES, "EUNL.DE", bad)
+    out = risk.analyze_portfolio_risk(
+        [Position(symbol="EUNL.DE"), Position(symbol="IWDA.AS")], interval="1d"
+    )
+    assert any("EUNL.DE: dropped 1 bad price" in w for w in out["warnings"])
+    # same fund on two exchanges again correlates perfectly
+    assert out["correlation"]["EUNL.DE"]["IWDA.AS"] == pytest.approx(1.0, abs=1e-3)
+    assert not any("time zones" in w for w in out["warnings"])  # both European

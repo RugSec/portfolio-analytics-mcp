@@ -52,7 +52,7 @@ def register(mcp: FastMCP) -> None:
         benchmark: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
-        interval: Literal["1d", "1wk", "1mo"] = "1d",
+        interval: Literal["1d", "1wk", "1mo"] = "1wk",
         method: Literal["current_holdings", "constant_weights"] = "current_holdings",
         risk_free_rate_pct: float = 0.0,
     ) -> dict:
@@ -69,8 +69,9 @@ def register(mcp: FastMCP) -> None:
         alpha, tracking error, information ratio; per position return,
         volatility, beta and share of portfolio risk; correlation matrix;
         diversification ratio; how ISINs were resolved; FX rates used;
-        warnings (short histories, stale quotes). Use analyze_portfolio
-        (justETF) for cost and country/sector/stock look-through of ETFs.
+        warnings (short histories, stale quotes, bad Yahoo prices removed).
+        Use analyze_portfolio (justETF) for cost and country/sector/stock
+        look-through of ETFs.
 
         Example positions: [{"isin": "IE00B4L5Y983", "value": 30000},
         {"symbol": "ASML.AS", "quantity": 10}, {"symbol": "AAPL", "quantity": 25}]
@@ -81,7 +82,9 @@ def register(mcp: FastMCP) -> None:
             benchmark: Optional Yahoo symbol, e.g. "IWDA.AS" or "^GSPC".
             start_date: YYYY-MM-DD. Defaults to 3 years before end_date.
             end_date: YYYY-MM-DD (exclusive). Defaults to the latest data.
-            interval: Return frequency: "1d", "1wk" or "1mo".
+            interval: Return frequency. Default "1wk": daily returns across
+                regions (US vs Europe) understate correlation and beta because
+                the markets close hours apart.
             method: "current_holdings" (today's units held throughout) or
                 "constant_weights" (rebalanced to today's weights each period).
             risk_free_rate_pct: Annual risk-free rate in %, e.g. 2.0.

@@ -138,7 +138,7 @@ def analyze_portfolio_risk(
     benchmark: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    interval: str = "1d",
+    interval: str = "1wk",
     method: an.HoldingMethod = "current_holdings",
     risk_free_rate_pct: float = 0.0,
 ) -> dict[str, Any]:
@@ -170,6 +170,12 @@ def analyze_portfolio_risk(
 
     options, resolved = _resolve(positions, base)
     close, chosen = _download_with_fallback(options, bench, start, end_date, interval)
+    close, removed = an.remove_spikes(close)
+    for sym, dates in removed.items():
+        warnings.append(
+            f"{sym}: dropped {len(dates)} bad price(s) that jumped and fully "
+            f"reversed next period (Yahoo data error): {', '.join(dates)}"
+        )
     if bench and bench not in close.columns:
         warnings.append(f"benchmark {bench} returned no data and was skipped")
         bench = None
@@ -221,6 +227,9 @@ def analyze_portfolio_risk(
             "Last price older than the others (forward-filled): "
             + ", ".join(f"{k} ({v})" for k, v in report["stale"].items())
         )
+    tz_warning = data.async_close_warning(cols, interval)
+    if tz_warning:
+        warnings.append(tz_warning)
     minor = sorted({c for c in currencies.values() if c in an.MINOR_CURRENCIES})
     if minor:
         warnings.append(

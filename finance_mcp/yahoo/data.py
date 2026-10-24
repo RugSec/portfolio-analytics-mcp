@@ -14,11 +14,11 @@ import httpx
 import pandas as pd
 import yfinance as yf
 
-from .analytics import major_currency
+from .analytics import major_currency, remove_spikes, to_base_currency
 
 VALID_INTERVALS = ("1d", "1wk", "1mo")
 _PROBE_URL = "https://query1.finance.yahoo.com/"
-_currency_cache: dict[str, str | None] = {}
+_meta_cache: dict[str, dict[str, str | None]] = {}
 
 
 class YahooError(Exception):
@@ -118,23 +118,58 @@ def download_close(
     return close.dropna(how="all").dropna(axis=1, how="all")
 
 
-def _currency(symbol: str) -> str | None:
+def _meta(symbol: str) -> dict[str, str | None]:
+    """Quote currency and exchange time zone (one fast_info lookup)."""
+    out: dict[str, str | None] = {"currency": None, "timezone": None}
     try:
-        value = yf.Ticker(symbol).fast_info["currency"]
+        fi = yf.Ticker(symbol).fast_info
+        out["currency"] = str(fi["currency"]) if fi["currency"] else None
+        out["timezone"] = str(fi["timezone"]) if fi["timezone"] else None
     except Exception:  # noqa: BLE001 - unknown tickers raise KeyError etc.
-        return None
-    return str(value) if value else None
+        pass
+    return out
+
+
+def _load_meta(symbols: list[str]) -> None:
+    todo = [s for s in symbols if s not in _meta_cache]
+    if todo:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for sym, meta in zip(todo, pool.map(_meta, todo), strict=True):
+                if meta["currency"]:
+                    _meta_cache[sym] = meta
 
 
 def get_currencies(symbols: list[str]) -> dict[str, str | None]:
     """Quote currency per symbol as Yahoo reports it (may be minor, e.g. GBp)."""
-    todo = [s for s in symbols if s not in _currency_cache]
-    if todo:
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            for sym, cur in zip(todo, pool.map(_currency, todo), strict=True):
-                if cur:
-                    _currency_cache[sym] = cur
-    return {s: _currency_cache.get(s) for s in symbols}
+    _load_meta(symbols)
+    return {s: (_meta_cache.get(s) or {}).get("currency") for s in symbols}
+
+
+def get_timezones(symbols: list[str]) -> dict[str, str | None]:
+    """Exchange time zone per symbol, e.g. 'Europe/Berlin', 'America/New_York'."""
+    _load_meta(symbols)
+    return {s: (_meta_cache.get(s) or {}).get("timezone") for s in symbols}
+
+
+def async_close_warning(symbols: list[str], interval: str) -> str | None:
+    """Warn when daily returns mix markets that close hours apart.
+
+    US markets close ~4.5h after Europe's, so a day's US move shows up in the
+    *next* European close: daily correlations and betas between regions are
+    biased towards zero. Weekly data largely removes this.
+    """
+    if interval != "1d" or len(symbols) < 2:
+        return None
+    zones = get_timezones(symbols)
+    regions = {z.split("/")[0] for z in zones.values() if z}
+    if len(regions) < 2:
+        return None
+    names = ", ".join(sorted(regions))
+    return (
+        f"Daily returns mix markets in different time zones ({names}): "
+        "cross-region correlations and betas are understated because the "
+        "markets close hours apart. Use interval='1wk' for those figures."
+    )
 
 
 def download_fx(
@@ -179,13 +214,16 @@ def prices_in_currency(
     Raises:
         YahooError: if no symbol has data, or currencies/FX cannot be resolved.
     """
-    from .analytics import to_base_currency
-
     close = download_close(symbols, start, end, interval)
     if close.empty:
         raise missing_data_error(symbols)
+    close, removed = remove_spikes(close)
     missing = [s for s in symbols if s not in close.columns]
-    info: dict[str, Any] = {"missing": missing, "currencies": {}}
+    info: dict[str, Any] = {
+        "missing": missing,
+        "currencies": {},
+        "removed_bad_prices": removed,
+    }
     if not base_currency:
         return close, info
     have = list(close.columns)
