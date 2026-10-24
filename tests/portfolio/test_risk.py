@@ -25,6 +25,7 @@ def test_portfolio_values_in_base_currency(fake_yahoo: list[list[str]]) -> None:
         base_currency="EUR",
         benchmark="SPY",
         interval="1d",
+        end_date="2026-10-24",
     )
     rows = {r["symbol"]: r for r in out["positions"]}
     aapl_eur = 10 * PRICES["AAPL"][-1] * 0.9
