@@ -1,5 +1,5 @@
 [project]
-name = "yahoo-finance-mcp"
+name = "portfolio-analytics-mcp"
 version = "0.1.0"
 description = "MCP server for portfolio analysis on top of yfinance"
 readme = "README.md"

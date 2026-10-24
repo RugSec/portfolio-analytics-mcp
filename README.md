@@ -40,7 +40,7 @@ Use `analyze_portfolio` (justETF) alongside it for costs and country/sector/stoc
 
 Data comes from [justETF](https://www.justetf.com) profile pages. **Personal, on-demand use only**: requests are
 rate-limited (1.5s apart, `JUSTETF_MIN_INTERVAL_S`) and parsed results are cached for 24h
-(`JUSTETF_CACHE_TTL_HOURS`, cache dir `JUSTETF_CACHE_DIR`, default `~/.cache/yahoo-finance-mcp/justetf`).
+(`JUSTETF_CACHE_TTL_HOURS`, cache dir `JUSTETF_CACHE_DIR`, default `~/.cache/portfolio-analytics-mcp/justetf`).
 No bulk crawling, no redistribution. Plan and design notes: [docs/JUSTETF_PLAN.md](docs/JUSTETF_PLAN.md).
 
 | Tool | What it does |
@@ -67,7 +67,7 @@ bucket is a lower bound. All tests run offline (no network): `uv run pytest`.
 Requires Python 3.11+. Dependencies are declared in `pyproject.toml` and locked in `uv.lock`, managed with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-cd yahoo-finance-mcp
+cd portfolio-analytics-mcp
 uv sync                          # creates .venv and installs runtime + dev dependencies
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 ```
@@ -113,7 +113,7 @@ Add this to `claude_desktop_config.json` (use absolute paths):
 {
   "mcpServers": {
     "finance": {
-      "command": "/absolute/path/to/yahoo-finance-mcp/.venv/bin/python",
+      "command": "/absolute/path/to/portfolio-analytics-mcp/.venv/bin/python",
       "args": ["-m", "finance_mcp"]
     }
   }

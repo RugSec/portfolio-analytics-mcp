@@ -20,13 +20,13 @@ logging.getLogger("httpx").setLevel(logging.WARNING)  # one INFO line per reques
 
 BASE_URL = "https://www.justetf.com"
 PROFILE_PATH = "/en/etf-profile.html"
-USER_AGENT = "yahoo-finance-mcp/0.1 (personal on-demand lookups; not a crawler)"
+USER_AGENT = "portfolio-analytics-mcp/0.1 (personal on-demand lookups; not a crawler)"
 
 MIN_INTERVAL_S = float(os.environ.get("JUSTETF_MIN_INTERVAL_S", "1.5"))
 CACHE_TTL_S = float(os.environ.get("JUSTETF_CACHE_TTL_HOURS", "24")) * 3600
 CACHE_DIR = Path(
     os.environ.get(
-        "JUSTETF_CACHE_DIR", Path.home() / ".cache" / "yahoo-finance-mcp" / "justetf"
+        "JUSTETF_CACHE_DIR", Path.home() / ".cache" / "portfolio-analytics-mcp" / "justetf"
     )
 )
 
