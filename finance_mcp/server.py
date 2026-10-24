@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-from .justetf.tools import register as register_justetf
-from .portfolio.tools import register as register_portfolio
-from .yahoo.tools import register as register_yahoo
+from finance_mcp.justetf.tools import register as register_justetf
+from finance_mcp.portfolio.tools import register as register_portfolio
+from finance_mcp.yahoo.tools import register as register_yahoo
 
 mcp = FastMCP("finance")
 register_yahoo(mcp)
