@@ -17,11 +17,27 @@ SOURCE = (
 
 
 def _with_source(data: dict) -> dict:
+    """Add the data source attribution to a tool result.
+
+    Args:
+        data: The tool result.
+
+    Returns:
+        A copy with a ``source`` key.
+    """
     return {**data, "source": SOURCE}
 
 
 def _load(isin: str, refresh: bool = False) -> dict:
-    """Profile, or ``{"error": ...}`` for the tool to return as is."""
+    """Load a profile without raising, for tools that return errors as data.
+
+    Args:
+        isin: ETF ISIN.
+        refresh: Bypass the cache.
+
+    Returns:
+        The profile, or ``{"error": ...}`` for the tool to return as is.
+    """
     try:
         return service.get_profile(isin, refresh=refresh)
     except JustEtfError as exc:
@@ -31,6 +47,18 @@ def _load(isin: str, refresh: bool = False) -> dict:
 def _split_positions(
     positions: list[dict[str, Any]],
 ) -> tuple[list[str], list[float | None]]:
+    """Split ``[{isin, amount}]`` positions into ISINs and amounts.
+
+    Args:
+        positions: Position dicts; ``weight`` is accepted instead of ``amount``.
+
+    Returns:
+        ``(isins, amounts)`` in input order; missing amounts are None.
+
+    Raises:
+        TypeError: if an amount is not a number.
+        ValueError: if an amount is a string that is not a number.
+    """
     isins, amounts = [], []
     for pos in positions:
         isins.append(str(pos.get("isin", "")))
@@ -40,7 +68,11 @@ def _split_positions(
 
 
 def register(mcp: FastMCP) -> None:
-    """Register all justETF tools on the given server."""
+    """Register all justETF tools on the given server.
+
+    Args:
+        mcp: The FastMCP server.
+    """
 
     @mcp.tool(annotations=READ_ONLY)
     def search_etf(query: str, max_results: int = 8, use_yahoo: bool = True) -> dict:
@@ -58,6 +90,10 @@ def register(mcp: FastMCP) -> None:
             query: Fund name, ticker, index name or ISIN.
             max_results: Maximum matches to return.
             use_yahoo: Also query Yahoo Finance when the registry has no full match.
+
+        Returns:
+            `matches` with ISIN, name, tickers and match type; optional
+            `unresolved_candidates`; a `note` on what to do next.
         """
         return search.search_etf(query, max(1, min(max_results, 20)), use_yahoo)
 
@@ -65,15 +101,18 @@ def register(mcp: FastMCP) -> None:
     def get_etf_profile(isin: str, refresh: bool = False) -> dict:
         """Key facts about an ETF from justETF, looked up by ISIN.
 
-        Returns name, ticker, TER (% p.a.), fund size, distribution policy
-        (accumulating/distributing), replication, index, fund currency and
-        currency hedging, domicile, provider, inception date, number of holdings,
-        legal structure, tax status per country, securities lending and a
-        description. Example ISIN: IE00B4L5Y983 (iShares Core MSCI World, Acc).
+        Example ISIN: IE00B4L5Y983 (iShares Core MSCI World, Acc).
 
         Args:
             isin: ETF ISIN (12 characters).
             refresh: Bypass the 24h cache and re-download the page.
+
+        Returns:
+            Name, ticker, TER (% p.a.), fund size, distribution policy
+            (accumulating/distributing), replication, index, fund currency and
+            currency hedging, domicile, provider, inception date, number of
+            holdings, legal structure, tax status per country, securities
+            lending and a description; or an `error`.
         """
         p = _load(isin, refresh)
         if "error" in p:
@@ -101,6 +140,10 @@ def register(mcp: FastMCP) -> None:
             isin: ETF ISIN.
             section: "countries", "sectors", "holdings" or "all".
             refresh: Bypass the 24h cache.
+
+        Returns:
+            The requested breakdowns with weights in %, the as-of date and
+            warnings; or an `error`.
         """
         section = section.strip().lower()
         if section not in {"all", "countries", "sectors", "holdings"}:
@@ -131,14 +174,17 @@ def register(mcp: FastMCP) -> None:
     def get_etf_performance(isin: str, refresh: bool = False) -> dict:
         """Returns and risk of an ETF from justETF.
 
-        Period returns (YTD, 1m, 3m, 6m, 1y, 3y, 5y, since inception), calendar
-        year returns, volatility (1/3/5y), return per risk and maximum drawdown.
         Returns are in the currency named in `currency` (EUR by default).
         Past performance does not predict future results.
 
         Args:
             isin: ETF ISIN.
             refresh: Bypass the 24h cache.
+
+        Returns:
+            `performance`: period returns (YTD, 1m, 3m, 6m, 1y, 3y, 5y, since
+            inception) and calendar-year returns; `risk`: volatility (1/3/5y),
+            return per risk and maximum drawdown. Or an `error`.
         """
         p = _load(isin, refresh)
         if "error" in p:
@@ -162,6 +208,9 @@ def register(mcp: FastMCP) -> None:
         Args:
             isin: ETF ISIN.
             refresh: Bypass the 24h cache.
+
+        Returns:
+            `listings`, one per exchange; or an `error`.
         """
         p = _load(isin, refresh)
         if "error" in p:
@@ -179,6 +228,9 @@ def register(mcp: FastMCP) -> None:
         Args:
             isin: ETF ISIN.
             refresh: Bypass the 24h cache.
+
+        Returns:
+            The index, this ETF's TER and size, and `similar_etfs`; or an `error`.
         """
         p = _load(isin, refresh)
         if "error" in p:
@@ -199,13 +251,15 @@ def register(mcp: FastMCP) -> None:
     def compare_etfs(isins: list[str], refresh: bool = False) -> dict:
         """Side-by-side comparison of up to 15 ETFs by ISIN.
 
-        Cost (TER), fund size, distribution, replication, domicile, index,
-        currency, hedging, inception, returns, volatility and holdings count,
-        plus who is cheapest / largest.
-
         Args:
             isins: List of ETF ISINs.
             refresh: Bypass the 24h cache.
+
+        Returns:
+            `etfs`: one row each with cost (TER), fund size, distribution,
+            replication, domicile, index, currency, hedging, inception,
+            returns, volatility and holdings count; the `cheapest` and
+            `largest` ISIN; per-ISIN `errors`.
         """
         profiles, errors = service.get_profiles(isins, refresh=refresh)
         rows = []
@@ -258,14 +312,10 @@ def register(mcp: FastMCP) -> None:
 
         Give each position as {"isin": "...", "amount": 5000}. `amount` is the
         money (any currency, used for weights and yearly cost) or a weight; give
-        it for every position or for none (equal weights).
-
-        Returns weighted TER and yearly fees, fund size per ETF (with small-fund
-        flags), portfolio share by distribution/replication/domicile/currency/
-        provider/index, and combined exposure by country, sector and top stocks
-        with each ETF's contribution. Use `focus_countries` / `focus_sectors`
-        (e.g. ["United States"], ["Technology"]) to get only those buckets.
-        Named buckets are lower bounds: justETF lumps the tail into "Other".
+        it for every position or for none (equal weights). Use
+        `focus_countries` / `focus_sectors` (e.g. ["United States"],
+        ["Technology"]) to get only those buckets. Named buckets are lower
+        bounds: justETF lumps the tail into "Other".
 
         Args:
             positions: List of {"isin": str, "amount": number (optional)}.
@@ -273,6 +323,12 @@ def register(mcp: FastMCP) -> None:
             focus_countries: Only return countries containing one of these names.
             focus_sectors: Only return sectors containing one of these names.
             refresh: Bypass the 24h cache.
+
+        Returns:
+            Weighted TER and yearly fees, fund size per ETF (with small-fund
+            flags), portfolio share by distribution/replication/domicile/
+            currency/provider/index, and combined exposure by country, sector
+            and top stocks with each ETF's contribution; or an `error`.
         """
         if not positions:
             return {"error": "positions is empty"}
@@ -281,7 +337,8 @@ def register(mcp: FastMCP) -> None:
         except (TypeError, ValueError) as exc:
             return {"error": f"invalid positions: {exc}"}
         profiles, errors = service.get_profiles(isins, refresh=refresh)
-        # keep amounts aligned with the ETFs that loaded successfully
+        # Keep amounts aligned with the ETFs that loaded successfully: key by
+        # normalised ISIN and add up repeated positions in the same ETF.
         by_isin: dict[str, float | None] = {}
         for raw, amount in zip(isins, amounts, strict=True):
             try:

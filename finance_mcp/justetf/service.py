@@ -17,6 +17,9 @@ def get_profile(isin: str, refresh: bool = False) -> dict:
         isin: ETF ISIN, e.g. IE00B4L5Y983.
         refresh: Ignore the cache and download the page again.
 
+    Returns:
+        The parsed profile, with ``fetched_at`` and ``from_cache``.
+
     Raises:
         JustEtfError: invalid ISIN, unknown ETF, blocked or unreachable site.
     """
@@ -31,6 +34,7 @@ def get_profile(isin: str, refresh: bool = False) -> dict:
         raise JustEtfError(f"{isin}: {exc}") from exc
     profile["fetched_at"] = datetime.now(UTC).isoformat(timespec="seconds")
     profile["from_cache"] = False
+    # Stored as from_cache=True, which is what later reads should report.
     client.cache_put(isin, {**profile, "from_cache": True})
     registry.learn(profile)
     return profile
@@ -40,6 +44,10 @@ def get_profiles(
     isins: list[str], refresh: bool = False
 ) -> tuple[dict[str, dict], dict[str, str]]:
     """Load several ETFs; failures are collected instead of aborting the batch.
+
+    Args:
+        isins: ISINs in any case; duplicates are loaded once.
+        refresh: Ignore the cache and download the pages again.
 
     Returns:
         ``(profiles_by_isin, errors_by_input)``.

@@ -1,9 +1,9 @@
 [project]
 name = "portfolio-analytics-mcp"
 version = "0.1.0"
-description = "MCP server for portfolio analysis on top of yfinance"
+description = "MCP server for portfolio analysis with Yahoo Finance and justETF data"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.12.*"
 dependencies = [
     "mcp[cli]>=1.9.0,<2",
     "yfinance>=0.2.50",
@@ -32,36 +32,65 @@ dev = [
     "pandas-stubs==3.0.5.260914",
     "poethepoet>=0.49.0",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "ruff>=0.17.1",
 ]
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+# D: docstrings (Google style), ANN: type hints, DOC201: Returns sections.
+# (DOC501 is left out: it mistakes `raise missing_data_error(...)` factories
+# for exception classes.)
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "D", "ANN", "DOC201"]
+ignore = ["ANN401"]  # Any is fine for yfinance/JSON payloads
+preview = true  # needed for the DOC rules
+explicit-preview-rules = true  # ...without turning on other preview rules
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E501"]
+# tests: type hints + one-line docstrings, no Args/Returns sections required
+"tests/*" = ["E501", "D417", "DOC201"]
 
 [tool.basedpyright]
-pythonVersion = "3.11"
+pythonVersion = "3.12"
 typeCheckingMode = "standard"
 include = ["finance_mcp"]
 
 [tool.poe.tasks]
-format = { help = "Format code and sort imports (writes files)", sequence = [
+format = { help = "Format code, sort imports, format Markdown/YAML (writes files)", sequence = [
     { cmd = "ruff format ." },
     { cmd = "ruff check --fix --select I ." },
+    { cmd = "npx --yes prettier@3.6.2 --write '**/*.{md,yml,yaml}'" },
 ] }
-format-check = { help = "Verify formatting without writing files (CI)", cmd = "ruff format --check ." }
+format-check = { help = "Verify formatting without writing files (CI)", sequence = [
+    { cmd = "ruff format --check ." },
+    { cmd = "npx --yes prettier@3.6.2 --check '**/*.{md,yml,yaml}'" },
+] }
 lint = { help = "Lint with ruff (no changes)", cmd = "ruff check ." }
 typecheck = { help = "Type check with basedpyright", cmd = "basedpyright" }
+test = { help = "Run tests with coverage (fails under the minimum)", cmd = "pytest --cov --cov-report=term-missing" }
 check = { help = "Quick local check: lint + type check", sequence = ["lint", "typecheck"] }
-ci = { help = "Everything CI runs, read-only: format-check + lint + typecheck", sequence = ["format-check", "lint", "typecheck"] }
+ci-checks = { help = "Everything CI runs, read-only: format-check + lint + typecheck + test", sequence = ["format-check", "lint", "typecheck", "test"] }
 fix = { help = "Auto-format and fix lint issues", sequence = ["format", "lint"] }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["finance_mcp"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

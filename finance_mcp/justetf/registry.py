@@ -42,11 +42,25 @@ _SYNONYMS = {
 
 
 def _learned_file() -> Path:
+    """Get the path of the learned registry (inside the cache directory).
+
+    Returns:
+        The JSON file path.
+    """
     return client.CACHE_DIR / "registry.json"
 
 
 def tokens(text: str) -> list[str]:
-    """Lower-case alphanumeric tokens with share-class synonyms normalised."""
+    """Split text into lower-case search tokens, share-class synonyms normalised.
+
+    Filler words ("UCITS", "ETF", currency codes) are dropped.
+
+    Args:
+        text: A fund name, index or query.
+
+    Returns:
+        The tokens, e.g. "Accumulating" -> "acc".
+    """
     out = []
     for tok in re.findall(r"[a-z0-9]+", text.lower()):
         tok = _SYNONYMS.get(tok, tok)
@@ -56,6 +70,14 @@ def tokens(text: str) -> list[str]:
 
 
 def _read(path: Path) -> list[dict[str, Any]]:
+    """Read registry entries from the seed list or the learned file.
+
+    Args:
+        path: JSON file: a list (seed) or a dict keyed by ISIN (learned).
+
+    Returns:
+        Entries with an ISIN; empty if the file is missing or invalid.
+    """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -66,7 +88,11 @@ def _read(path: Path) -> list[dict[str, Any]]:
 
 
 def load() -> dict[str, dict[str, Any]]:
-    """All known ETFs by ISIN; learned data extends/overrides the seed."""
+    """Load all known ETFs by ISIN; learned data extends/overrides the seed.
+
+    Returns:
+        ``{isin: {"isin", "name", "tickers", "index"}}``; tickers are merged.
+    """
     merged: dict[str, dict[str, Any]] = {}
     for entry in _read(SEED_FILE) + _read(_learned_file()):
         slot = merged.setdefault(entry["isin"], {"isin": entry["isin"], "tickers": []})
@@ -76,7 +102,11 @@ def load() -> dict[str, dict[str, Any]]:
 
 
 def learn(profile: dict[str, Any]) -> None:
-    """Remember a fetched profile (and its similar ETFs) for later name lookups."""
+    """Remember a fetched profile (and its similar ETFs) for later name lookups.
+
+    Args:
+        profile: A parsed profile from ``parser.parse_profile``.
+    """
     entries = [
         {
             "isin": profile["isin"],
@@ -111,6 +141,14 @@ def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
     Every meaningful query word must match a name/ticker/index word (prefixes
     allowed). If nothing matches fully, entries matching at least 60% of the
     words are returned with ``match: "partial"``.
+
+    Args:
+        query: Fund name, ticker or index words.
+        limit: Maximum entries to return.
+
+    Returns:
+        Matching entries with ``isin``, ``name``, ``tickers``, ``index`` and
+        ``match`` ("full" or "partial").
     """
     q = tokens(query)
     if not q:
@@ -126,6 +164,8 @@ def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
         )
         if not hits:
             continue
+        # Share of query words matched, plus a bonus for an exact ticker hit
+        # so "IWDA" ranks the fund with that ticker above name matches.
         score = hits / len(q) + (1.0 if " ".join(q) in tickers else 0.0)
         results.append((score, entry))
     results.sort(key=lambda r: (-r[0], r[1].get("name", "")))
@@ -151,7 +191,11 @@ def search(query: str, limit: int = 10) -> list[dict[str, Any]]:
 
 
 def by_ticker() -> dict[str, list[str]]:
-    """Map lower-case ticker -> ISINs that use it."""
+    """Map each lower-case ticker to the ISINs that use it.
+
+    Returns:
+        ``{ticker: [isin, ...]}`` (a ticker can be reused across exchanges).
+    """
     out: dict[str, list[str]] = {}
     for isin, e in load().items():
         for t in e.get("tickers", []):
@@ -160,7 +204,11 @@ def by_ticker() -> dict[str, list[str]]:
 
 
 def by_name() -> dict[str, str]:
-    """Map normalised name -> ISIN."""
+    """Map each normalised fund name to its ISIN.
+
+    Returns:
+        ``{" ".join(tokens(name)): isin}``.
+    """
     return {
         " ".join(tokens(e["name"])): isin for isin, e in load().items() if e.get("name")
     }

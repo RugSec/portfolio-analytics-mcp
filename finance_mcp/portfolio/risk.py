@@ -49,6 +49,14 @@ class Position(BaseModel):
 
     @model_validator(mode="after")
     def _check(self) -> Position:
+        """Require an identifier and at most one way of sizing the position.
+
+        Returns:
+            The validated position.
+
+        Raises:
+            ValueError: if neither symbol nor isin, or both quantity and value.
+        """
         if not (self.symbol or self.isin):
             raise ValueError("each position needs a symbol or an isin")
         if self.quantity is not None and self.value is not None:
@@ -57,17 +65,39 @@ class Position(BaseModel):
 
 
 def default_start(end_date: str | None) -> str:
-    """Three years before ``end_date`` (or today)."""
+    """Compute the default start date: three years before ``end_date`` (or today).
+
+    Args:
+        end_date: YYYY-MM-DD, or None for today.
+
+    Returns:
+        The start date as YYYY-MM-DD.
+    """
     end = pd.Timestamp(end_date) if end_date else pd.Timestamp.today()
     return an.day(end - pd.DateOffset(years=3))
 
 
 def _unique(items: list[str]) -> list[str]:
+    """Remove duplicates, keeping the first occurrence's order.
+
+    Args:
+        items: Strings, possibly repeated.
+
+    Returns:
+        The unique strings in order.
+    """
     return list(dict.fromkeys(items))
 
 
 def _justetf_code(exc: JustEtfError) -> str:
-    """Error code for a failed ISIN lookup: bad input, outage, or unknown."""
+    """Classify a failed ISIN lookup as bad input, an outage, or unknown.
+
+    Args:
+        exc: The error from justETF/Yahoo resolution.
+
+    Returns:
+        ``invalid_input``, ``upstream_unavailable`` or ``no_data``.
+    """
     msg = str(exc)
     if "not a valid ISIN" in msg or "check digit" in msg:
         return "invalid_input"
@@ -79,7 +109,19 @@ def _justetf_code(exc: JustEtfError) -> str:
 def _resolve(
     positions: list[Position], base: str
 ) -> tuple[list[list[str]], list[dict[str, Any]]]:
-    """Candidate symbols per position (one for symbols, ranked for ISINs)."""
+    """List candidate Yahoo symbols per position (one for symbols, ranked for ISINs).
+
+    Args:
+        positions: The holdings.
+        base: Base currency, to prefer listings trading in it.
+
+    Returns:
+        ``(options, resolved)``: candidate symbols per position, and per
+        position ``{"isin", "name"}`` for ISINs or ``{}`` for symbols.
+
+    Raises:
+        YahooError: if an ISIN cannot be resolved or has no Yahoo listing.
+    """
     options: list[list[str]] = []
     resolved: list[dict[str, Any]] = []
     for p in positions:
@@ -114,9 +156,26 @@ def _download_with_fallback(
     end: str | None,
     interval: str,
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Download first choices; for ISINs, try the next listing if one is empty."""
+    """Download first choices; for ISINs, try the next listing if one is empty.
+
+    Args:
+        options: Candidate symbols per position, best first.
+        benchmark: Optional benchmark symbol to download alongside.
+        start: First date YYYY-MM-DD.
+        end: End date YYYY-MM-DD (exclusive), or None.
+        interval: "1d", "1wk" or "1mo".
+
+    Returns:
+        ``(closes, chosen)``: local-currency closes and the symbol used per
+        position.
+
+    Raises:
+        YahooError: if a position has no data on any of its candidates.
+    """
     chosen = [o[0] for o in options]
     wanted = _unique(chosen + ([benchmark] if benchmark else []))
+    # One batch download for all first choices, then one extra download per
+    # fallback listing only for positions whose first choice came back empty.
     close = data.download_close(wanted, start, end, interval)
     for i, opts in enumerate(options):
         for alt in opts[1:]:
@@ -142,7 +201,25 @@ def analyze_portfolio_risk(
     method: an.HoldingMethod = "current_holdings",
     risk_free_rate_pct: float = 0.0,
 ) -> dict[str, Any]:
-    """See the MCP tool docstring in ``portfolio.tools``.
+    """Analyse a portfolio's risk and return in one base currency.
+
+    The MCP tool docstring in ``portfolio.tools`` describes the inputs and
+    output for the agent.
+
+    Args:
+        positions: Holdings, by symbol or ISIN, sized by quantity or value.
+        base_currency: ISO code everything is converted into.
+        benchmark: Optional Yahoo symbol to compare against.
+        start_date: YYYY-MM-DD; defaults to 3 years before ``end_date``.
+        end_date: YYYY-MM-DD (exclusive); defaults to the latest data.
+        interval: "1d", "1wk" or "1mo".
+        method: ``current_holdings`` or ``constant_weights``.
+        risk_free_rate_pct: Annual risk-free rate in %.
+
+    Returns:
+        Window, total value, portfolio and benchmark statistics, risk split,
+        per-position rows, correlation matrix, ISIN resolution, FX rates used,
+        warnings and notes.
 
     Raises:
         YahooError: invalid input, unresolvable ISIN, missing data or FX.
@@ -168,6 +245,7 @@ def analyze_portfolio_risk(
     bench = data.clean_symbols([benchmark])[0] if benchmark else None
     warnings: list[str] = []
 
+    # 1. ISIN/symbol -> Yahoo symbol, then local-currency prices.
     options, resolved = _resolve(positions, base)
     close, chosen = _download_with_fallback(options, bench, start, end_date, interval)
     close, removed = an.remove_spikes(close)
@@ -180,6 +258,7 @@ def analyze_portfolio_risk(
         warnings.append(f"benchmark {bench} returned no data and was skipped")
         bench = None
 
+    # 2. Convert everything into the base currency with daily FX.
     currencies = data.get_currencies(list(close.columns))
     unknown = [s for s, c in currencies.items() if not c]
     if unknown:
@@ -195,7 +274,8 @@ def analyze_portfolio_risk(
     except ValueError as exc:
         raise YahooError("fx_unavailable", str(exc)) from exc
 
-    # current value per symbol (positions on the same symbol are merged)
+    # 3. Current value per symbol (positions on the same symbol are merged);
+    # unsized positions count 1 each, i.e. equal weights.
     values: dict[str, float] = defaultdict(float)
     for p, sym in zip(positions, chosen, strict=True):
         if p.value is not None:
@@ -207,6 +287,7 @@ def analyze_portfolio_risk(
     pos_syms = list(values)
     weights = an.normalize_weights(pd.Series(values, dtype=float))
 
+    # 4. Common calendar across exchanges, with data-quality warnings.
     cols = _unique(pos_syms + ([bench] if bench else []))
     report = an.window_report(base_px[cols])
     aligned = an.align_prices(base_px[cols])
@@ -236,6 +317,7 @@ def analyze_portfolio_risk(
             f"Quotes in minor units ({', '.join(minor)}) converted to major units."
         )
 
+    # 5. Statistics: portfolio, benchmark, risk split, then per position.
     ppy = an.PERIODS_PER_YEAR[interval]
     rf = risk_free_rate_pct / 100
     port_px = aligned[pos_syms]

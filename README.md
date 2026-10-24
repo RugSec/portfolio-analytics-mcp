@@ -1,113 +1,66 @@
-# Finance MCP (portfolio analysis)
+# Portfolio Analytics MCP
 
-One MCP server, one Python package (`finance_mcp`), two data sources plus tools that join them:
+[![CI](https://github.com/RugSec/portfolio-analytics-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/RugSec/portfolio-analytics-mcp/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-- `finance_mcp/yahoo/`: prices, quotes, FX, performance, correlation, dividends via
-  [yfinance](https://pypi.org/project/yfinance/) (unofficial, personal use only). Data can be delayed (up to ~15-20 min).
-  `analytics.py` holds the maths (pure, tested offline), `data.py` the downloads, currencies and FX.
-- `finance_mcp/justetf/`: ETF details (costs, size, exposure, search by name) from justETF, see below.
-- `finance_mcp/portfolio/`: ISIN -> Yahoo ticker resolution and whole-portfolio risk in one base currency.
+**Ask Claude about your investments in plain language.** This is an
+[MCP](https://modelcontextprotocol.io) server that gives Claude (or any MCP
+client) read-only tools for market data and portfolio analysis: prices, FX,
+ETF costs and exposure, and risk for a whole portfolio of stocks and ETFs,
+measured in your own currency.
 
-`finance_mcp/server.py` builds the server and registers all three. No API key needed. All tools are read-only
-(annotated `readOnlyHint`), and failures come back as `{"error", "error_code", "hint"}` with `error_code` one of
-`invalid_input`, `no_data`, `upstream_unavailable`, `fx_unavailable`, `insufficient_data`.
+It is built for European investors as much as US ones: it understands ISINs,
+UCITS ETFs listed on several exchanges, and prices quoted in pence.
 
-## Portfolio tools (start here for portfolio analysis)
+## What you can ask
 
-| Tool | What it does |
-|------|--------------|
-| `analyze_portfolio_risk` | Positions as `{symbol or isin, quantity or value}` (stocks and ETFs mixed). Converts everything to `base_currency` with daily FX (pence-quoted London listings handled), aligns calendars, and returns value and weights, return, volatility, Sharpe/Sortino/Calmar, max drawdown with dates, beta/alpha/tracking error vs a `benchmark`, per-position risk contribution, correlation matrix and diversification ratio. Warns about short histories and stale quotes. |
-| `resolve_instrument` | ISIN -> ranked Yahoo tickers. ETFs via their justETF exchange listings (XETRA -> `.DE`, Amsterdam -> `.AS`, London -> `.L`, SIX -> `.SW`, ...), other ISINs via Yahoo search. |
+> "I hold 30k EUR of IE00B4L5Y983, 10 ASML.AS and 25 AAPL. How volatile is
+> this portfolio, and which position contributes most to the risk?"
 
-Use `analyze_portfolio` (justETF) alongside it for costs and country/sector/stock look-through of the ETFs.
+> "Compare the costs of the iShares Core MSCI World and the Vanguard FTSE
+> All-World. Which is cheaper and bigger?"
 
-## Yahoo tools
+> "How much of my ETF portfolio is in US tech stocks? Do my ETFs overlap?"
 
-| Tool | What it does |
-|------|--------------|
-| `get_price_history` | Adjusted close prices for one or more tickers, optionally converted to `base_currency`. Default 2020-01-01 to latest; `interval` 1d/1wk/1mo. Long series are thinned to ~400 points. |
-| `search_symbol` | Company/ETF name or ISIN -> several ticker candidates (exchange, type). The LLM should ask you which listing you hold. |
-| `get_symbol_info` | Ticker -> name, exchange, currency, type, sector. |
-| `get_etf_sector_allocation` | Sector weights (%) of an ETF (patchy for UCITS ETFs; prefer `get_etf_exposure`). |
-| `get_etf_holdings` | Top holdings with % weight (Yahoo usually exposes ~10 only). |
-| `get_quote` | Latest price, previous close, change %, currency (`GBp` = pence), exchange. |
-| `get_fx_rates` | Latest FX rates into a base currency, optional change since a date. |
-| `get_performance_stats` | Total/annualised return (annualised only for windows of 1y+), volatility scaled to the interval, Sharpe, Sortino, Calmar, max drawdown with dates; optional `base_currency`, `risk_free_rate_pct`, `benchmark` (beta, alpha, tracking error, information ratio). |
-| `get_correlation` | Correlation matrix of returns on a common calendar (default weekly), optional `base_currency`. |
-| `get_dividends` | Dividend history plus trailing-12-month total and payment count. |
+> "What has VWCE returned since 2021 in euros, compared with the S&P 500?"
 
-## justETF tools (ETF look-up by ISIN)
+Claude picks the right tools, fetches the data and explains the result.
 
-Data comes from [justETF](https://www.justetf.com) profile pages. **Personal, on-demand use only**: requests are
-rate-limited (1.5s apart, `JUSTETF_MIN_INTERVAL_S`) and parsed results are cached for 24h
-(`JUSTETF_CACHE_TTL_HOURS`, cache dir `JUSTETF_CACHE_DIR`, default `~/.cache/portfolio-analytics-mcp/justetf`).
-No bulk crawling, no redistribution. Plan and design notes: [docs/JUSTETF_PLAN.md](docs/JUSTETF_PLAN.md).
+## What's inside
 
-| Tool | What it does |
-|------|--------------|
-| `search_etf` | **Start here.** Name, ticker, index or ISIN -> ISIN (+ tickers). Local registry first, Yahoo as fallback for fuzzy names; hits it cannot map to an ISIN are returned with `isin: null` rather than guessed. |
-| `get_etf_profile` | TER, fund size, acc/dist, replication, index, currency/hedging, domicile, provider, legal + tax info. |
-| `get_etf_exposure` | Country, sector and top-10 holdings breakdown of one ETF (rest is "Other"). |
-| `get_etf_performance` | Period and calendar-year returns, volatility, return per risk, max drawdown. |
-| `get_etf_listings` | Exchanges, trading currencies, tickers, Bloomberg/Reuters codes. |
-| `get_similar_etfs` | Other ETFs on the same index with size and TER. |
-| `compare_etfs` | Side-by-side table for up to 15 ISINs, with cheapest/largest. |
-| `analyze_portfolio` | For `[{isin, amount}]`: weighted TER and yearly fees, fund sizes, structure mix, combined country/sector exposure with per-ETF contribution (filterable), top-stock overlap. |
+| Area          | What it gives you                                                                                      | Data source                                |
+| ------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| **Portfolio** | Risk and return of a mixed portfolio in one currency: volatility, drawdown, beta, risk per position    | Yahoo Finance + justETF                    |
+| **ETFs**      | Costs (TER), fund size, country/sector/stock exposure, listings, similar funds, portfolio look-through | [justETF](https://www.justetf.com)         |
+| **Markets**   | Price history, quotes, FX rates, performance statistics, correlations, dividends                       | [Yahoo Finance](https://finance.yahoo.com) |
 
-Name search: justETF's own search is not used (its AJAX endpoint is disallowed by robots.txt) and Yahoo cannot return
-ISINs, so `finance_mcp/justetf/data/etfs.json` ships ~28 popular ETFs (each verified against its justETF page), and every
-profile you fetch adds the ETF, all its listing tickers and its "similar ETFs" to a local registry
-(`<cache dir>/registry.json`). If a fund is unknown, give the ISIN once and it is remembered.
+20 tools in total, all read-only. No API key or account needed. See the
+[user guide](docs/USER_GUIDE.md) for the full list.
 
-Limits: justETF itemises only the top ~10 countries / ~13 sectors / top 10 holdings, so portfolio exposure per named
-bucket is a lower bound. All tests run offline (no network): `uv run pytest`.
+## Quickstart
 
-## Setup
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and
+Python 3.12.
 
-Requires Python 3.11+. Dependencies are declared in `pyproject.toml` and locked in `uv.lock`, managed with [uv](https://docs.astral.sh/uv/):
+**1. Install**
 
 ```bash
+git clone https://github.com/RugSec/portfolio-analytics-mcp.git
 cd portfolio-analytics-mcp
-uv sync                          # creates .venv and installs runtime + dev dependencies
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+uv sync
 ```
 
-## Development
+**2. Connect it to Claude**
 
-Dev tools (ruff, basedpyright, poethepoet) are in the `dev` dependency group. Tasks run with [poe](https://poethepoet.natn.io/):
-
-| Command | What it does |
-|---------|--------------|
-| `poe format` | Format code and sort imports (writes files) |
-| `poe format-check` | Check formatting without writing files |
-| `poe lint` | Lint with ruff |
-| `poe typecheck` | Type check with basedpyright |
-| `poe check` | Quick local check: lint + type check |
-| `poe ci` | Everything CI runs, read-only: format-check + lint + typecheck |
-| `poe fix` | Format, then lint with auto-fixes |
-
-Run `poe -h` to list them.
-
-Editor setup (VS Code) is in `.vscode/`, which is git-ignored, so it stays local:
-
-- `.vscode/extensions.json` recommends Ruff, basedpyright and Emeraldwalk.
-- Ruff formats on save, and Emeraldwalk runs `ruff format` and import sorting on every saved `.py` file.
-
-Quick check that Yahoo is reachable from your machine:
+Claude Code:
 
 ```bash
-uv run python -c "from finance_mcp.yahoo.tools import get_quote; print(get_quote(['AAPL','ASML.AS']))"
+claude mcp add finance -- /absolute/path/to/portfolio-analytics-mcp/.venv/bin/python -m finance_mcp
 ```
 
-Inspect the tools interactively:
-
-```bash
-mcp dev finance_mcp/server.py
-```
-
-## Connect to Claude Desktop
-
-Add this to `claude_desktop_config.json` (use absolute paths):
+Claude Desktop: add this to `claude_desktop_config.json`, then restart the
+app. On Windows use `.venv\\Scripts\\python.exe`.
 
 ```json
 {
@@ -120,31 +73,30 @@ Add this to `claude_desktop_config.json` (use absolute paths):
 }
 ```
 
-On Windows use `.venv\\Scripts\\python.exe` with double backslashes. Restart Claude Desktop afterwards.
+**3. Ask a question**, for example _"What is the TER of IE00B4L5Y983?"_
 
-For Claude Code: `claude mcp add finance -- /absolute/path/to/.venv/bin/python -m finance_mcp`
+Want to run it as a shared remote server instead? See
+[Remote deployment](docs/USER_GUIDE.md#remote-deployment-http).
 
-## Deploy over HTTP (Render)
+## Important to know
 
-Set `MCP_TRANSPORT=http` to serve streamable HTTP at `/mcp` instead of stdio. The server refuses to start without `MCP_API_KEYS`, a comma-separated list of `name:token` pairs (tokens of 16+ characters), one per person so you can revoke individually:
+- **Not financial advice.** The tools report data and statistics; past
+  performance does not predict future results.
+- **Personal use only.** Yahoo Finance (through the unofficial
+  [yfinance](https://pypi.org/project/yfinance/) library) and justETF are
+  third-party sites. This server makes polite, on-demand requests
+  (rate-limited and cached) and is not meant for bulk downloads or
+  redistributing their data. Check their terms before using it.
+- Quotes can be delayed by up to ~20 minutes, and Yahoo's coverage of
+  European ETF holdings is patchy (the justETF tools fill that gap).
 
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"   # generate a token
-MCP_TRANSPORT=http MCP_API_KEYS="me:<token>,alice:<token>" python -m finance_mcp
-```
+## Learn more
 
-Clients authenticate with `Authorization: Bearer <token>`, or with `https://<host>/mcp?key=<token>` for clients that only accept a URL (the token then appears in URL logs, so treat it as a secret). `/health` is the only unauthenticated path.
+- [User guide](docs/USER_GUIDE.md): every tool, example workflows,
+  configuration, remote deployment and limitations.
+- [Contributing](CONTRIBUTING.md): development setup, tests and project
+  layout.
 
-On Render, create a Web Service from this repo ([render.yaml](render.yaml) has the settings) and add `MCP_API_KEYS` in the dashboard. Claude Code: `claude mcp add --transport http finance https://<app>.onrender.com/mcp --header "Authorization: Bearer <token>"`.
+## License
 
-Env: `PORT` (set by Render), `HOST` (default `0.0.0.0`). The server is stateless, so restarts don't break clients; the justETF disk cache is lost on each restart unless you attach a disk.
-
-## Notes and limitations
-
-- Use Yahoo exchange suffixes: `ASML.AS` (Amsterdam), `VWCE.DE` (Xetra), `SAP.DE`, `AAPL` (US).
-- Prices are in each listing's local currency unless you pass `base_currency`; `analyze_portfolio_risk` always converts.
-- Dividends are per share as Yahoo reports them, which can be the fund's distribution currency rather than the listing's.
-- ETF holdings/sector data on Yahoo is often partial for European UCITS ETFs.
-- yfinance is unofficial: Yahoo can rate limit bursts or change things and break it. Run `uv lock --upgrade-package yfinance && uv sync` if calls start failing.
-- `mcp` is pinned to `<2` because this code uses the v1 `FastMCP` API.
-- `pandas` is pinned exactly to `3.0.6` (with a matching `pandas-stubs` in the dev group). Bump both together.
+[MIT](LICENSE)

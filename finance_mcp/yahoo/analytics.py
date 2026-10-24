@@ -25,7 +25,15 @@ EPS = 1e-12  # treat smaller dispersion as zero (float noise)
 
 
 def num(x: Any, digits: int = 4) -> float | None:
-    """Rounded float, or None for missing, NaN, infinite or non-numeric input."""
+    """Round a value to a float, or None for missing, NaN, infinite or non-numeric.
+
+    Args:
+        x: Any value (number, numpy scalar, string, None...).
+        digits: Decimal places to keep.
+
+    Returns:
+        The rounded float, or None if ``x`` is not a finite number.
+    """
     try:
         f = float(x)
     except (TypeError, ValueError):
@@ -36,22 +44,44 @@ def num(x: Any, digits: int = 4) -> float | None:
 
 
 def pct(x: Any, digits: int = 2) -> float | None:
-    """A fraction as a rounded percentage (0.1234 -> 12.34)."""
+    """Express a fraction as a rounded percentage (0.1234 -> 12.34).
+
+    Args:
+        x: A fraction, e.g. a return.
+        digits: Decimal places to keep.
+
+    Returns:
+        The percentage, or None if ``x`` is not a finite number.
+    """
     value = num(x, 10)
     return None if value is None else round(value * 100, digits)
 
 
 def day(x: Any) -> str:
-    """Any date-like index value as YYYY-MM-DD."""
+    """Format any date-like value as YYYY-MM-DD.
+
+    Args:
+        x: A Timestamp, datetime, date or date string.
+
+    Returns:
+        The ISO date string.
+    """
     return pd.Timestamp(x).strftime("%Y-%m-%d")
 
 
 # ------------------------------------------------------------------ currency
 def major_currency(code: str | None) -> tuple[str | None, float]:
-    """Map a Yahoo currency code to (ISO currency, factor to convert into it).
+    """Map a Yahoo currency code to its ISO currency and conversion factor.
 
     >>> major_currency("GBp")
     ('GBP', 0.01)
+
+    Args:
+        code: Yahoo currency code, possibly a minor unit like "GBp".
+
+    Returns:
+        ``(ISO code, factor)``: multiply a price by ``factor`` to get the ISO
+        unit. ``(None, 1.0)`` when ``code`` is empty.
     """
     if not code:
         return None, 1.0
@@ -75,6 +105,9 @@ def to_base_currency(
             on any (e.g. daily) calendar; it is forward-filled onto ``prices``.
         base: ISO code of the target currency, e.g. "EUR".
 
+    Returns:
+        Prices in ``base``, on the same index and columns as ``prices``.
+
     Raises:
         ValueError: if a currency is unknown or its FX rate is missing.
     """
@@ -88,6 +121,8 @@ def to_base_currency(
         if major != base:
             if major not in fx.columns:
                 raise ValueError(f"no FX rate {major}->{base} for {col}")
+            # Put the FX series on the union of both calendars, carry the last
+            # known rate forward, then read it back on the price dates only.
             rate = fx[major].dropna()
             rate = (
                 rate.reindex(rate.index.union(series.index))
@@ -113,6 +148,10 @@ def remove_spikes(
     instead of pence). Real moves that stick are kept. The last price cannot
     be checked (there is no next one).
 
+    Args:
+        prices: One column per symbol, oldest first.
+        threshold: Minimum relative jump (0.15 = 15%) to be considered.
+
     Returns:
         ``(cleaned prices, {symbol: [removed dates]})``; removed prices become
         NaN, which ``align_prices`` later forward-fills.
@@ -128,6 +167,8 @@ def remove_spikes(
             prev = v[i - 1]
             up = v[i] / prev - 1
             back = v[i + 1] / v[i] - 1
+            # Bad print: a big jump (1), reversed next period (2: opposite
+            # signs), landing back near the previous price (3).
             if (
                 abs(up) > threshold
                 and up * back < 0
@@ -152,12 +193,28 @@ def align_prices(prices: pd.DataFrame, max_gap: int = 5) -> pd.DataFrame:
     Exchange holidays (and a last quote that lags by a day or two) are
     forward-filled for at most ``max_gap`` periods, then only dates where every
     series has a price are kept, i.e. the common window.
+
+    Args:
+        prices: One column per symbol, possibly on different calendars.
+        max_gap: Maximum number of consecutive missing periods to fill.
+
+    Returns:
+        Prices on the common window, without missing values.
     """
     return prices.sort_index().ffill(limit=max_gap).dropna(how="any")
 
 
 def window_report(prices: pd.DataFrame) -> dict[str, Any]:
-    """First/last valid date per series and which series limit the window."""
+    """Report the first/last valid date per series and which ones limit the window.
+
+    Args:
+        prices: One column per symbol, before alignment.
+
+    Returns:
+        ``first_dates`` and ``last_dates`` per symbol, ``window_limited_by``
+        (the symbols starting last, if not all start together) and ``stale``
+        (symbols whose last price is >3 days older than the newest one).
+    """
     first: dict[str, pd.Timestamp] = {}
     last: dict[str, pd.Timestamp] = {}
     for col in prices.columns:
@@ -185,12 +242,21 @@ def window_report(prices: pd.DataFrame) -> dict[str, Any]:
 
 # ------------------------------------------------------------------ single series
 def max_drawdown(values: pd.Series) -> dict[str, Any]:
-    """Deepest peak-to-trough fall, with peak, trough and recovery dates."""
+    """Find the deepest peak-to-trough fall, with peak, trough and recovery dates.
+
+    Args:
+        values: Prices or portfolio values, oldest first.
+
+    Returns:
+        ``max_drawdown_pct`` (<= 0) and ``peak_date``, ``trough_date`` and
+        ``recovery_date`` (None while not recovered, all None without a fall).
+    """
     v = values.to_numpy(dtype=float)
+    # Drawdown at each point = distance below the running maximum so far.
     dd = v / np.maximum.accumulate(v) - 1
     trough = int(np.argmin(dd))
-    peak = int(np.argmax(v[: trough + 1]))
-    recovered = np.nonzero(v[trough:] >= v[peak])[0]
+    peak = int(np.argmax(v[: trough + 1]))  # the high before the trough
+    recovered = np.nonzero(v[trough:] >= v[peak])[0]  # first time back at the peak
     if dd[trough] >= 0:  # never fell below a previous high
         return {
             "max_drawdown_pct": 0.0,
@@ -209,21 +275,35 @@ def max_drawdown(values: pd.Series) -> dict[str, Any]:
 
 
 def _per_period_rf(risk_free_rate: float, periods_per_year: int) -> float:
+    """Convert an annual risk-free rate into the compounded rate per period.
+
+    Args:
+        risk_free_rate: Annual rate as a fraction.
+        periods_per_year: 252 for daily, 52 weekly, 12 monthly.
+
+    Returns:
+        The rate per period.
+    """
     return (1 + risk_free_rate) ** (1 / periods_per_year) - 1
 
 
 def series_stats(
     prices: pd.Series, periods_per_year: int, risk_free_rate: float = 0.0
 ) -> dict[str, Any]:
-    """Return and risk statistics of one (total-return) price series.
+    """Compute return and risk statistics of one (total-return) price series.
+
+    Annualised return is only given for windows of at least one year, so a
+    short lucky stretch is not extrapolated.
 
     Args:
         prices: Adjusted prices or portfolio values, oldest first.
         periods_per_year: 252 for daily, 52 weekly, 12 monthly.
         risk_free_rate: Annual rate as a fraction (0.02 = 2%), for Sharpe/Sortino.
 
-    Annualised return is only given for windows of at least one year, so a
-    short lucky stretch is not extrapolated.
+    Returns:
+        Window (``from``, ``to``, ``years``, ``observations``), total and
+        annualised return, annualised volatility, Sharpe, Sortino and Calmar
+        ratios, max drawdown with dates, and best/worst period return.
 
     Raises:
         ValueError: with fewer than 3 prices.
@@ -242,6 +322,7 @@ def series_stats(
     sharpe = (
         float(excess.mean()) / std * math.sqrt(periods_per_year) if std > EPS else None
     )
+    # Sortino uses downside deviation: only below-risk-free returns count.
     downside = float(np.sqrt((np.minimum(excess, 0) ** 2).mean()))
     sortino = (
         float(excess.mean()) / downside * math.sqrt(periods_per_year)
@@ -274,9 +355,22 @@ def relative_stats(
     periods_per_year: int,
     risk_free_rate: float = 0.0,
 ) -> dict[str, Any]:
-    """Beta, Jensen's alpha, correlation, tracking error, information ratio.
+    """Compare an asset with a benchmark: beta, alpha, tracking error and more.
 
     Both inputs are price series; their returns are compared on common dates.
+
+    Args:
+        asset: Prices of the asset or portfolio.
+        benchmark: Prices of the benchmark.
+        periods_per_year: 252 for daily, 52 weekly, 12 monthly.
+        risk_free_rate: Annual rate as a fraction, for alpha.
+
+    Returns:
+        ``beta``, ``alpha_annualized_pct`` (Jensen's alpha), ``correlation``,
+        ``tracking_error_pct`` and ``information_ratio``.
+
+    Raises:
+        ValueError: with fewer than 3 overlapping returns.
     """
     rets = pd.concat([asset, benchmark], axis=1).pct_change().dropna()
     if len(rets) < 3:
@@ -285,12 +379,13 @@ def relative_stats(
     var_b = float(b.var(ddof=1))
     beta = float(a.cov(b)) / var_b if var_b > EPS else None
     rf = _per_period_rf(risk_free_rate, periods_per_year)
+    # Jensen's alpha: excess return not explained by beta x benchmark excess.
     alpha = (
         (float((a - rf).mean()) - beta * float((b - rf).mean())) * periods_per_year
         if beta is not None
         else None
     )
-    active = a - b
+    active = a - b  # active return: what the asset adds over the benchmark
     te = float(active.std(ddof=1)) * math.sqrt(periods_per_year)
     info = float(active.mean()) * periods_per_year / te if te > EPS else None
     return {
@@ -304,7 +399,17 @@ def relative_stats(
 
 # ------------------------------------------------------------------ portfolio
 def normalize_weights(weights: pd.Series) -> pd.Series:
-    """Scale positive weights to sum to 1."""
+    """Scale positive weights to sum to 1.
+
+    Args:
+        weights: Weight (or value) per symbol.
+
+    Returns:
+        The weights divided by their sum.
+
+    Raises:
+        ValueError: if any weight is zero, negative or missing.
+    """
     if (weights <= 0).any():
         raise ValueError("weights must be positive")
     return weights / weights.sum()
@@ -320,12 +425,25 @@ def portfolio_values(
     ``current_holdings``: today's units held unchanged over the whole window
     (weights drift with prices and match ``weights`` on the last date).
     ``constant_weights``: rebalanced back to ``weights`` every period.
+
+    Args:
+        prices: Aligned prices in one currency, one column per position.
+        weights: Current weight (or value) per position.
+        method: ``current_holdings`` or ``constant_weights``.
+
+    Returns:
+        Portfolio value per date, 100 on the first date.
+
+    Raises:
+        ValueError: for an unknown ``method`` or non-positive weights.
     """
     w = normalize_weights(weights.reindex(prices.columns))
     if method == "current_holdings":
+        # Units that give today's weights at today's prices, held throughout.
         units = w / prices.iloc[-1]
         values = (prices * units).sum(axis=1)
     elif method == "constant_weights":
+        # Each period's return is the weighted average of the asset returns.
         rets = prices.pct_change().fillna(0.0)
         values = (1 + rets.mul(w, axis=1).sum(axis=1)).cumprod()
     else:
@@ -341,14 +459,27 @@ def risk_contributions(
     Uses the covariance of returns and the given (current) weights:
     contribution_i = w_i * (Cov w)_i / vol, which sums to the portfolio vol.
     ``diversification_ratio`` is sum(w_i * vol_i) / portfolio vol (1 = none).
+
+    Args:
+        prices: Aligned prices in one currency, one column per position.
+        weights: Current weight (or value) per position.
+        periods_per_year: 252 for daily, 52 weekly, 12 monthly.
+
+    Returns:
+        ``portfolio_volatility_pct``, ``diversification_ratio`` and, per
+        position, weight, volatility, risk contribution and marginal volatility.
+
+    Raises:
+        ValueError: if the portfolio has zero volatility.
     """
     rets = prices.pct_change().dropna()
     cov = rets.cov() * periods_per_year
     w = normalize_weights(weights.reindex(cov.columns)).to_numpy(dtype=float)
     sigma = cov.to_numpy(dtype=float)
-    port_vol = float(math.sqrt(w @ sigma @ w))
+    port_vol = float(math.sqrt(w @ sigma @ w))  # sqrt(w' Cov w)
     if port_vol < EPS:
         raise ValueError("portfolio has zero volatility")
+    # Euler split: d(vol)/d(w_i) times w_i; the contributions add up to vol.
     marginal = sigma @ w / port_vol
     contrib = w * marginal
     vols = np.sqrt(np.diag(sigma))
@@ -368,7 +499,15 @@ def risk_contributions(
 
 
 def correlation_matrix(prices: pd.DataFrame, digits: int = 3) -> dict[str, Any]:
-    """Pairwise correlation of returns as a nested dict."""
+    """Compute the pairwise correlation of returns as a nested dict.
+
+    Args:
+        prices: Aligned prices, one column per symbol.
+        digits: Decimal places to keep.
+
+    Returns:
+        ``{symbol: {symbol: correlation}}``.
+    """
     corr = prices.pct_change().dropna().corr()
     return {
         str(a): {str(b): num(corr.loc[a, b], digits) for b in corr.columns}

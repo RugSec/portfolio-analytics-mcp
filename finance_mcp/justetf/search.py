@@ -17,6 +17,15 @@ ETF_TYPES = {"ETF", "MUTUALFUND"}
 
 
 def _yahoo_candidates(query: str, limit: int) -> list[dict[str, Any]]:
+    """Search Yahoo for funds matching a query.
+
+    Args:
+        query: Free-text query.
+        limit: Maximum Yahoo results.
+
+    Returns:
+        Yahoo quotes of ETFs and mutual funds only.
+    """
     import yfinance as yf
 
     quotes = yf.Search(query, max_results=limit, news_count=0).quotes or []
@@ -24,7 +33,14 @@ def _yahoo_candidates(query: str, limit: int) -> list[dict[str, Any]]:
 
 
 def _resolve_yahoo(quotes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Group Yahoo listings of the same fund and attach an ISIN when known."""
+    """Group Yahoo listings of the same fund and attach an ISIN when known.
+
+    Args:
+        quotes: Yahoo search quotes.
+
+    Returns:
+        One group per fund: ``isin`` (or None), ``name`` and ``yahoo_listings``.
+    """
     tickers = registry.by_ticker()
     names = registry.by_name()
     known = registry.load()
@@ -32,7 +48,7 @@ def _resolve_yahoo(quotes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for q in quotes:
         symbol = str(q["symbol"])
         name = q.get("longname") or q.get("shortname") or symbol
-        base = symbol.split(".")[0].lower()
+        base = symbol.split(".")[0].lower()  # "IWDA.AS" -> "iwda"
         isin = None
         candidates = tickers.get(base, [])
         if len(candidates) == 1:
@@ -41,6 +57,7 @@ def _resolve_yahoo(quotes: list[dict[str, Any]]) -> list[dict[str, Any]]:
             isin = names.get(" ".join(registry.tokens(name)))
         else:
             isin = names.get(" ".join(registry.tokens(name)))
+        # Group by ISIN when known, else by normalised name.
         key = isin or " ".join(registry.tokens(name))
         group = groups.setdefault(
             key,
@@ -59,7 +76,17 @@ def _resolve_yahoo(quotes: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def search_etf(
     query: str, max_results: int = 8, use_yahoo: bool = True
 ) -> dict[str, Any]:
-    """Find ETFs (with ISIN) matching a name, ticker or ISIN."""
+    """Find ETFs (with ISIN) matching a name, ticker or ISIN.
+
+    Args:
+        query: Fund name, ticker, index or ISIN.
+        max_results: Maximum matches to return.
+        use_yahoo: Query Yahoo when the registry has no full match.
+
+    Returns:
+        ``matches`` (with ``isin`` and ``match`` type), optional
+        ``unresolved_candidates`` and ``warnings``, and a ``note`` for the agent.
+    """
     query = (query or "").strip()
     if not query:
         return {"error": "query is empty"}

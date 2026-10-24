@@ -1,5 +1,7 @@
-"""Finance MCP server: Yahoo Finance (prices, quotes) + justETF (ETF details)
-and cross-source portfolio tools (ISIN resolution, portfolio risk).
+"""Finance MCP server: builds the server and registers every tool.
+
+Tools come from Yahoo Finance (prices, quotes), justETF (ETF details) and
+cross-source portfolio tools (ISIN resolution, portfolio risk).
 
 Run with ``uv run finance-mcp`` or ``python -m finance_mcp`` (stdio). Set
 ``MCP_TRANSPORT=http`` to serve streamable HTTP with API-key auth instead.
@@ -27,11 +29,23 @@ register_portfolio(mcp)
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_: Request) -> PlainTextResponse:
+    """Answer load balancer health checks (no authentication needed).
+
+    Args:
+        _: The request (unused).
+
+    Returns:
+        A plain "ok".
+    """
     return PlainTextResponse("ok")
 
 
 def serve_http() -> None:
-    """Serve streamable HTTP at ``/mcp``; every request needs an API key."""
+    """Serve streamable HTTP at ``/mcp``; every request needs an API key.
+
+    Raises:
+        SystemExit: if ``MCP_API_KEYS`` is not set.
+    """
     import uvicorn
 
     keys = load_keys()

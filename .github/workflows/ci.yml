@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs of the same branch/PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-checks:
+    name: CI checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Python version comes from .python-version (kept in sync with
+      # PYTHON_VERSION in render.yaml).
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      # Same command as locally: format-check (ruff + prettier), lint,
+      # type check and tests with the coverage minimum.
+      - run: uv run poe ci-checks
+      - name: Build package
+        run: uv build

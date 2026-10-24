@@ -38,7 +38,14 @@ SUFFIX_RANK = [".DE", ".AS", ".L", ".SW", ".PA", ".MI", ".BR", ".MC", ".VI"]
 
 
 def yahoo_suffix(listing: dict[str, Any]) -> str | None:
-    """Yahoo suffix for one justETF listing, or None if Yahoo lacks the venue."""
+    """Find the Yahoo symbol suffix for one justETF listing.
+
+    Args:
+        listing: A listing with ``mic_code`` and ``exchange``.
+
+    Returns:
+        The suffix (e.g. ".DE"), or None if Yahoo lacks the venue.
+    """
     mic = (listing.get("mic_code") or "").upper()
     if mic in MIC_SUFFIX:
         return MIC_SUFFIX[mic]
@@ -57,6 +64,10 @@ def yahoo_candidates(
     Order: trading currency equal to ``base_currency`` first (no FX noise),
     then by exchange liquidity (SUFFIX_RANK).
 
+    Args:
+        listings: The ETF's listings from its justETF profile.
+        base_currency: Optional ISO code whose listings rank first.
+
     Returns:
         ``(candidates, unmapped_listings)``.
     """
@@ -70,6 +81,7 @@ def yahoo_candidates(
             unmapped.append({k: x.get(k) for k in ("exchange", "mic_code", "ticker")})
             continue
         symbol = ticker + suffix
+        # Same ticker+venue can appear twice (e.g. two XETRA segments).
         candidates.setdefault(
             symbol,
             {
@@ -81,6 +93,14 @@ def yahoo_candidates(
         )
 
     def rank(c: dict[str, Any]) -> tuple[int, int]:
+        """Sort key: base-currency listings first, then by exchange liquidity.
+
+        Args:
+            c: A candidate.
+
+        Returns:
+            ``(0 if same currency else 1, position in SUFFIX_RANK)``.
+        """
         suffix = "." + c["symbol"].rsplit(".", 1)[-1]
         same_ccy = 0 if base and (c["trading_currency"] or "").upper() == base else 1
         pos = SUFFIX_RANK.index(suffix) if suffix in SUFFIX_RANK else len(SUFFIX_RANK)
@@ -90,7 +110,14 @@ def yahoo_candidates(
 
 
 def _yahoo_search_isin(isin: str) -> list[dict[str, Any]]:
-    """Yahoo's own search accepts many ISINs (mostly single stocks)."""
+    """Search Yahoo by ISIN, which works for many single stocks.
+
+    Args:
+        isin: A validated ISIN.
+
+    Returns:
+        Candidates with symbol, name, exchange and type.
+    """
     import yfinance as yf
 
     quotes = yf.Search(isin, max_results=10, news_count=0).quotes or []
@@ -111,6 +138,14 @@ def resolve_isin(isin: str, base_currency: str | None = None) -> dict[str, Any]:
 
     ETFs: ranked from the exchange listings on justETF (cached 24h).
     Anything justETF does not know (e.g. single stocks): Yahoo search by ISIN.
+
+    Args:
+        isin: ISIN in any case.
+        base_currency: Optional ISO code whose listings rank first.
+
+    Returns:
+        ``isin``, ``name``, ``source``, ranked ``yahoo_candidates`` and the
+        ``unmapped_listings`` Yahoo does not cover.
 
     Raises:
         JustEtfError: invalid ISIN, or neither source found anything.
