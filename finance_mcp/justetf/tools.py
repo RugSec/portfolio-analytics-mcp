@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from . import analysis, search, service
 from .client import JustEtfError
 
+READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 SOURCE = (
     "justETF (https://www.justetf.com), personal use; data may lag the fund provider."
 )
@@ -40,7 +42,7 @@ def _split_positions(
 def register(mcp: FastMCP) -> None:
     """Register all justETF tools on the given server."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     def search_etf(query: str, max_results: int = 8, use_yahoo: bool = True) -> dict:
         """Find an ETF's ISIN from its name, ticker or index (use this first).
 
@@ -59,7 +61,7 @@ def register(mcp: FastMCP) -> None:
         """
         return search.search_etf(query, max(1, min(max_results, 20)), use_yahoo)
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     def get_etf_profile(isin: str, refresh: bool = False) -> dict:
         """Key facts about an ETF from justETF, looked up by ISIN.
 
@@ -84,7 +86,7 @@ def register(mcp: FastMCP) -> None:
         ]  # fmt: skip
         return _with_source({k: p.get(k) for k in keys})
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     def get_etf_exposure(
         isin: str,
         section: str = "all",
@@ -125,7 +127,7 @@ def register(mcp: FastMCP) -> None:
         out["warnings"] = p["warnings"]
         return _with_source(out)
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     def get_etf_performance(isin: str, refresh: bool = False) -> dict:
         """Returns and risk of an ETF from justETF.
 
@@ -151,7 +153,7 @@ def register(mcp: FastMCP) -> None:
             }
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     def get_etf_listings(isin: str, refresh: bool = False) -> dict:
         """Exchanges where an ETF trades: currency, ticker, Bloomberg/Reuters codes.
 
@@ -168,7 +170,7 @@ def register(mcp: FastMCP) -> None:
             {"isin": p["isin"], "name": p["name"], "listings": p["listings"]}
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     def get_similar_etfs(isin: str, refresh: bool = False) -> dict:
         """ETFs on the same index (justETF's "further ETFs") with size, TER, policy.
 
@@ -193,7 +195,7 @@ def register(mcp: FastMCP) -> None:
             }
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     def compare_etfs(isins: list[str], refresh: bool = False) -> dict:
         """Side-by-side comparison of up to 15 ETFs by ISIN.
 
@@ -244,7 +246,7 @@ def register(mcp: FastMCP) -> None:
             }
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     def analyze_portfolio(
         positions: list[dict[str, Any]],
         top_n: int = 15,

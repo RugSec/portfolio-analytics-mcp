@@ -1,101 +1,33 @@
 """Yahoo Finance tools for portfolio analysis.
 
 Built on yfinance (unofficial, personal use only). Data can be delayed
-depending on the exchange.
+depending on the exchange. Maths lives in ``analytics`` (pure, tested
+offline); downloads, currencies and FX in ``data``.
 """
 
 from __future__ import annotations
 
 import math
 from datetime import date
-from typing import Any, cast
+from typing import Any, Literal
 
 import pandas as pd
 import yfinance as yf
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
+
+from . import analytics as an
+from . import data
+from .data import YahooError
 
 DEFAULT_START = "2020-01-01"
 MAX_ROWS_PER_TICKER = 400  # keeps tool output a sensible size for the LLM
-VALID_INTERVALS = {"1d", "1wk", "1mo"}
+Interval = Literal["1d", "1wk", "1mo"]
+READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 
-
-# --------------------------------------------------------------------------
-# helpers
-# --------------------------------------------------------------------------
-def _clean_tickers(tickers: list[str] | str) -> list[str]:
-    """Normalize tickers to unique, uppercase symbols in their original order.
-
-    Args:
-        tickers: A list of symbols, or a comma/semicolon-separated string.
-
-    Returns:
-        The cleaned symbols, without blanks or duplicates.
-    """
-    if isinstance(tickers, str):
-        tickers = [t for t in tickers.replace(";", ",").split(",")]
-    out = []
-    for t in tickers:
-        t = t.strip().upper()
-        if t and t not in out:
-            out.append(t)
-    return out
-
-
-def _num(x: Any, digits: int = 4) -> float | None:
-    """Convert a value to a rounded float, or None if it is missing or invalid.
-
-    Args:
-        x: Value to convert (number, numeric string, NaN, None, ...).
-        digits: Number of decimal places to round to.
-
-    Returns:
-        The rounded float, or None for NaN, infinity or non-numeric input.
-    """
-    try:
-        f = float(x)
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(f) or math.isinf(f):
-        return None
-    return round(f, digits)
-
-
-def _download_close(
-    tickers: list[str], start: str, end: str | None, interval: str
-) -> pd.DataFrame:
-    """Download adjusted close prices with one column per ticker.
-
-    Args:
-        tickers: Yahoo Finance symbols to download.
-        start: Start date, YYYY-MM-DD.
-        end: End date (exclusive), YYYY-MM-DD, or None for the latest data.
-        interval: One of VALID_INTERVALS ("1d", "1wk", "1mo").
-
-    Returns:
-        A DataFrame indexed by date with one column per ticker, or an empty
-        DataFrame if Yahoo returned no data.
-
-    Raises:
-        ValueError: If the interval is not supported.
-    """
-    if interval not in VALID_INTERVALS:
-        raise ValueError(f"interval must be one of {sorted(VALID_INTERVALS)}")
-    df = yf.download(
-        tickers,
-        start=start,
-        end=end,
-        interval=interval,
-        auto_adjust=True,
-        progress=False,
-        group_by="column",
-        threads=True,
-    )
-    if df is None or df.empty:
-        return pd.DataFrame()
-    close = df["Close"]
-    if isinstance(close, pd.Series):  # single ticker
-        close = close.to_frame(name=tickers[0])
-    return close.dropna(how="all")
+# kept for backwards compatibility with earlier imports
+_clean_tickers = data.clean_symbols
+_num = an.num
 
 
 # --------------------------------------------------------------------------
@@ -105,39 +37,40 @@ def get_price_history(
     tickers: list[str],
     start_date: str = DEFAULT_START,
     end_date: str | None = None,
-    interval: str = "1d",
+    interval: Interval = "1d",
+    base_currency: str | None = None,
 ) -> dict:
     """Get historical adjusted closing prices for one or more tickers.
 
+    Prices are adjusted for splits and dividends. Series longer than 400
+    points are thinned evenly (first and last kept, `thinned: true`); use a
+    coarser interval for full data. For statistics, prefer
+    get_performance_stats / analyze_portfolio_risk over computing from this.
+
     Args:
-        tickers: Yahoo Finance symbols, e.g. ["AAPL", "ASML.AS", "VWCE.DE"].
+        tickers: Yahoo symbols, e.g. ["AAPL", "ASML.AS", "VWCE.DE"].
         start_date: YYYY-MM-DD. Defaults to 2020-01-01.
-        end_date: YYYY-MM-DD (exclusive). Defaults to the latest available value.
-        interval: "1d", "1wk" or "1mo". Use weekly/monthly for long ranges.
-
-    Prices are adjusted for splits and dividends. If a series is longer than
-    400 points, it is thinned evenly (first and last point are always kept)
-    and `thinned` is set to true; request a coarser interval for full data.
+        end_date: YYYY-MM-DD (exclusive). Defaults to the latest value.
+        interval: "1d", "1wk" or "1mo".
+        base_currency: Optional ISO code (e.g. "EUR") to convert all prices
+            into with daily FX; default is each listing's own currency.
     """
-    symbols = _clean_tickers(tickers)
-    if not symbols:
-        return {"error": "No tickers provided."}
+    symbols = data.clean_symbols(tickers)
     try:
-        close = _download_close(symbols, start_date, end_date, interval)
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"Download failed: {e}"}
-    if close.empty:
-        return {"error": "No data returned. Check the symbols and date range."}
-
+        close, info = data.prices_in_currency(
+            symbols, start_date, end_date, interval, base_currency
+        )
+    except YahooError as exc:
+        return exc.to_dict()
     result: dict[str, Any] = {}
     for sym in symbols:
         if sym not in close.columns:
-            result[sym] = {"error": "No data for this symbol."}
+            result[sym] = {
+                "error": "No data for this symbol in the range.",
+                "error_code": "no_data",
+            }
             continue
         s = close[sym].dropna()
-        if s.empty:
-            result[sym] = {"error": "No data for this symbol in the range."}
-            continue
         thinned = False
         if len(s) > MAX_ROWS_PER_TICKER:
             step = math.ceil(len(s) / MAX_ROWS_PER_TICKER)
@@ -147,16 +80,16 @@ def get_price_history(
             s = s.take(idx)
             thinned = True
         result[sym] = {
-            "first_date": s.index[0].strftime("%Y-%m-%d"),
-            "last_date": s.index[-1].strftime("%Y-%m-%d"),
-            "last_price": _num(s.iloc[-1]),
+            "first_date": an.day(s.index[0]),
+            "last_date": an.day(s.index[-1]),
+            "last_price": an.num(s.iloc[-1]),
             "points": len(s),
             "thinned": thinned,
-            "prices": {
-                cast(pd.Timestamp, d).strftime("%Y-%m-%d"): _num(v)
-                for d, v in s.items()
-            },
+            "prices": {an.day(d): an.num(v) for d, v in s.items()},
         }
+        if base_currency:
+            result[sym]["currency"] = base_currency.upper()
+            result[sym]["quote_currency"] = info["currencies"].get(sym)
     return {"interval": interval, "start": start_date, "end": end_date, "data": result}
 
 
@@ -164,18 +97,24 @@ def get_price_history(
 # 2. name <-> symbol
 # --------------------------------------------------------------------------
 def search_symbol(query: str, max_results: int = 10) -> dict:
-    """Find ticker candidates for a company/ETF name (or a partial ticker).
+    """Find ticker candidates for a company/ETF name, partial ticker or ISIN.
 
-    Returns several candidates with exchange and currency. The same company
-    often trades on multiple exchanges (e.g. ASML on NASDAQ and Euronext
-    Amsterdam), so when more than one candidate is plausible, ASK THE USER
-    which listing/exchange/currency they hold before using a ticker.
+    The same security often trades on several exchanges (e.g. ASML on NASDAQ
+    and Euronext Amsterdam), so when more than one candidate is plausible,
+    ASK THE USER which listing/exchange/currency they hold. For European ETFs
+    by ISIN, resolve_instrument gives exchange-accurate tickers.
+
+    Args:
+        query: Name, ticker fragment or ISIN.
+        max_results: Maximum candidates (1-25).
     """
     try:
-        res = yf.Search(query, max_results=max_results, news_count=0)
+        res = yf.Search(query, max_results=max(1, min(max_results, 25)), news_count=0)
         quotes = res.quotes or []
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"Search failed: {e}"}
+    except Exception as exc:  # noqa: BLE001
+        return YahooError(
+            "upstream_unavailable", f"Search failed: {exc}", "Retry later."
+        ).to_dict()
     candidates = [
         {
             "symbol": q.get("symbol"),
@@ -188,25 +127,30 @@ def search_symbol(query: str, max_results: int = 10) -> dict:
         for q in quotes
         if q.get("symbol")
     ]
-    return {
-        "query": query,
-        "candidates": candidates,
-        "note": (
+    out: dict[str, Any] = {"query": query, "candidates": candidates}
+    if not candidates:
+        out["note"] = "No matches. Try a shorter name or the ISIN."
+    else:
+        out["note"] = (
             "Multiple listings are possible: confirm exchange and currency "
             "with the user."
-        ),
-    }
+        )
+    return out
 
 
 def get_symbol_info(ticker: str) -> dict:
-    """Get the company/fund name, exchange, currency and type for a ticker."""
+    """Name, exchange, currency, type, sector/industry and country of a ticker.
+
+    Args:
+        ticker: Yahoo symbol, e.g. "ASML.AS".
+    """
     sym = ticker.strip().upper()
     try:
         info = yf.Ticker(sym).info
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"Lookup failed: {e}"}
+    except Exception as exc:  # noqa: BLE001
+        return data.missing_data_error([sym]).to_dict() | {"detail": str(exc)}
     if not info or not (info.get("longName") or info.get("shortName")):
-        return {"error": f"No information found for {sym}."}
+        return data.missing_data_error([sym]).to_dict()
     keys = [
         "symbol",
         "longName",
@@ -228,182 +172,313 @@ def get_symbol_info(ticker: str) -> dict:
 # --------------------------------------------------------------------------
 # 3 + 4. ETF composition
 # --------------------------------------------------------------------------
+def _funds_data(sym: str) -> Any:
+    try:
+        return yf.Ticker(sym).funds_data
+    except Exception as exc:  # noqa: BLE001
+        raise data.missing_data_error([sym]) from exc
+
+
 def get_etf_sector_allocation(ticker: str) -> dict:
-    """Get the sector allocation (% by sector) of an ETF or fund."""
+    """Sector allocation (% by sector) of an ETF or fund, from Yahoo.
+
+    Yahoo coverage of European UCITS ETFs is patchy: for those, prefer
+    get_etf_exposure (justETF, by ISIN).
+
+    Args:
+        ticker: Yahoo symbol of the fund, e.g. "SPY", "IWDA.AS".
+    """
     sym = ticker.strip().upper()
     try:
-        fd = yf.Ticker(sym).funds_data
-        weights = fd.sector_weightings
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"Could not load fund data for {sym}: {e}. Is it an ETF/fund?"}
+        weights = _funds_data(sym).sector_weightings
+    except YahooError as exc:
+        return exc.to_dict()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"No fund data for {sym}: {exc}", "error_code": "no_data"}
     if not weights:
-        return {"error": f"No sector data available for {sym} on Yahoo Finance."}
+        return {
+            "error": f"No sector data for {sym} on Yahoo (is it an ETF/fund?).",
+            "error_code": "no_data",
+            "hint": "For UCITS ETFs use get_etf_exposure with the ISIN.",
+        }
     sectors = {
-        k: _num(v * 100, 2)
+        k: an.num(v * 100, 2)
         for k, v in sorted(weights.items(), key=lambda kv: kv[1], reverse=True)
     }
     return {"ticker": sym, "sector_allocation_pct": sectors}
 
 
 def get_etf_holdings(ticker: str) -> dict:
-    """Get the top holdings of an ETF with each company's % weight.
+    """Top holdings of an ETF with each company's % weight, from Yahoo.
 
-    Yahoo usually exposes only the top ~10 holdings, so the percentages
-    will not sum to 100. `total_pct_covered` shows how much is covered.
+    Yahoo usually exposes only the top ~10 holdings; `total_pct_covered`
+    shows how much of the fund that is. For UCITS ETFs and portfolio-level
+    overlap, prefer get_etf_exposure / analyze_portfolio (justETF, by ISIN).
+
+    Args:
+        ticker: Yahoo symbol of the fund, e.g. "QQQ", "IWDA.AS".
     """
     sym = ticker.strip().upper()
     try:
-        fd = yf.Ticker(sym).funds_data
-        top = fd.top_holdings
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"Could not load fund data for {sym}: {e}. Is it an ETF/fund?"}
+        top = _funds_data(sym).top_holdings
+    except YahooError as exc:
+        return exc.to_dict()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"No fund data for {sym}: {exc}", "error_code": "no_data"}
     if top is None or top.empty:
-        return {"error": f"No holdings data available for {sym} on Yahoo Finance."}
-    holdings = []
-    for symbol, row in top.iterrows():
-        holdings.append(
-            {
-                "symbol": symbol,
-                "name": row.get("Name"),
-                "weight_pct": _num((row.get("Holding Percent") or 0) * 100, 2),
-            }
-        )
+        return {
+            "error": f"No holdings data for {sym} on Yahoo (is it an ETF/fund?).",
+            "error_code": "no_data",
+            "hint": "For UCITS ETFs use get_etf_exposure with the ISIN.",
+        }
+    holdings = [
+        {
+            "symbol": symbol,
+            "name": row.get("Name"),
+            "weight_pct": an.num((row.get("Holding Percent") or 0) * 100, 2),
+        }
+        for symbol, row in top.iterrows()
+    ]
     return {
         "ticker": sym,
         "holdings": holdings,
-        "total_pct_covered": _num(sum(h["weight_pct"] or 0 for h in holdings), 2),
+        "total_pct_covered": an.num(sum(h["weight_pct"] or 0 for h in holdings), 2),
     }
 
 
 # --------------------------------------------------------------------------
-# extras for portfolio analysis
+# quotes, FX, statistics
 # --------------------------------------------------------------------------
 def get_quote(tickers: list[str]) -> dict:
-    """Get the latest price, currency, exchange and market state for tickers.
+    """Latest price, previous close, day change, currency and exchange.
 
-    Data may be delayed (up to ~15-20 min) depending on the exchange.
+    Data may be delayed (up to ~15-20 min). `currency` is as Yahoo reports
+    it: "GBp" means pence (divide by 100 for GBP).
+
+    Args:
+        tickers: Yahoo symbols, e.g. ["IWDA.AS", "VWRL.L", "AAPL"].
     """
     out: dict[str, Any] = {}
-    for sym in _clean_tickers(tickers):
+    for sym in data.clean_symbols(tickers):
         try:
-            t = yf.Ticker(sym)
-            fi = t.fast_info
-            price = _num(fi.get("lastPrice"))
-            prev = _num(fi.get("previousClose"))
-            change_pct = _num((price / prev - 1) * 100, 2) if price and prev else None
+            fi = yf.Ticker(sym).fast_info
+            price = an.num(fi["lastPrice"])
+            prev = an.num(fi["previousClose"])
+            currency = fi["currency"]
+            exchange = fi["exchange"]
+        except Exception:  # noqa: BLE001 - unknown tickers raise KeyError etc.
             out[sym] = {
-                "price": price,
-                "previous_close": prev,
-                "change_pct": change_pct,
-                "currency": fi.get("currency"),
-                "exchange": fi.get("exchange"),
+                "error": "No quote for this symbol.",
+                "error_code": "no_data",
+                "hint": "Check it with search_symbol (non-US listings need a "
+                "suffix, e.g. VWCE.DE).",
             }
-        except Exception as e:  # noqa: BLE001
-            out[sym] = {"error": str(e)}
+            continue
+        out[sym] = {
+            "price": price,
+            "previous_close": prev,
+            "change_pct": an.num((price / prev - 1) * 100, 2)
+            if price and prev
+            else None,
+            "currency": currency,
+            "exchange": exchange,
+        }
+    if out and all("error" in v for v in out.values()) and not data.yahoo_reachable():
+        return data.missing_data_error(list(out)).to_dict()
     return {"as_of": date.today().isoformat(), "quotes": out}
+
+
+def get_fx_rates(
+    currencies: list[str], base_currency: str = "EUR", start_date: str | None = None
+) -> dict:
+    """Latest FX rates into a base currency (and the change since start_date).
+
+    Rate = units of base_currency per 1 unit of the currency, e.g. with base
+    EUR, USD -> 0.92 means 1 USD = 0.92 EUR. Minor units are accepted
+    ("GBp" is converted as GBP / 100).
+
+    Args:
+        currencies: ISO codes, e.g. ["USD", "GBP", "CHF"].
+        base_currency: ISO code to express rates in. Default EUR.
+        start_date: Optional YYYY-MM-DD to also return the % change since then.
+    """
+    base = base_currency.strip().upper()
+    wanted = {c.strip(): an.major_currency(c.strip()) for c in currencies if c.strip()}
+    if not wanted:
+        return {"error": "No currencies given.", "error_code": "invalid_input"}
+    start = start_date or an.day(pd.Timestamp.today() - pd.Timedelta(days=10))
+    try:
+        fx = data.download_fx({m or "" for m, _ in wanted.values()}, base, start, None)
+    except YahooError as exc:
+        return exc.to_dict()
+    rates: dict[str, Any] = {}
+    for code, (major, factor) in wanted.items():
+        if major == base:
+            rates[code] = {"rate": an.num(factor, 6), "date": date.today().isoformat()}
+            continue
+        s = fx[major].dropna()
+        row: dict[str, Any] = {
+            "rate": an.num(s.iloc[-1] * factor, 6),
+            "date": an.day(s.index[-1]),
+        }
+        if start_date:
+            row["change_since_start_pct"] = an.pct(s.iloc[-1] / s.iloc[0] - 1)
+            row["start_rate"] = an.num(s.iloc[0] * factor, 6)
+        rates[code] = row
+    return {"base_currency": base, "rates": rates}
 
 
 def get_performance_stats(
     tickers: list[str],
     start_date: str = DEFAULT_START,
     end_date: str | None = None,
+    interval: Interval = "1d",
+    base_currency: str | None = None,
+    risk_free_rate_pct: float = 0.0,
+    benchmark: str | None = None,
 ) -> dict:
-    """Compute total return, annualized return, volatility and max drawdown.
+    """Return and risk statistics per ticker, optionally vs a benchmark.
 
-    Uses adjusted daily closes (dividends reinvested). Volatility is the
-    annualized standard deviation of daily returns.
+    Total and annualised return (annualised only for windows >= 1 year),
+    annualised volatility, Sharpe, Sortino, Calmar, max drawdown with peak /
+    trough / recovery dates, best and worst period. With `benchmark`: beta,
+    alpha, correlation, tracking error and information ratio. Uses adjusted
+    closes (dividends reinvested). Each ticker uses its own available window,
+    so check `from`/`to` before comparing; for a portfolio use
+    analyze_portfolio_risk.
+
+    Args:
+        tickers: Yahoo symbols.
+        start_date: YYYY-MM-DD. Defaults to 2020-01-01.
+        end_date: YYYY-MM-DD (exclusive). Defaults to the latest value.
+        interval: Return frequency: "1d", "1wk" or "1mo".
+        base_currency: Optional ISO code to measure everything in (e.g. "EUR"
+            for a euro investor holding USD assets); default local currency.
+        risk_free_rate_pct: Annual risk-free rate in %, for Sharpe/Sortino.
+        benchmark: Optional Yahoo symbol to compare against, e.g. "IWDA.AS".
     """
-    symbols = _clean_tickers(tickers)
+    symbols = data.clean_symbols(tickers)
+    bench = data.clean_symbols([benchmark])[0] if benchmark else None
+    wanted = symbols + ([bench] if bench and bench not in symbols else [])
     try:
-        close = _download_close(symbols, start_date, end_date, "1d")
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"Download failed: {e}"}
-    if close.empty:
-        return {"error": "No data returned."}
+        close, _ = data.prices_in_currency(
+            wanted, start_date, end_date, interval, base_currency
+        )
+    except YahooError as exc:
+        return exc.to_dict()
+    ppy = an.PERIODS_PER_YEAR[interval]
+    rf = risk_free_rate_pct / 100
+    has_bench = bench is not None and bench in close.columns
     stats: dict[str, Any] = {}
     for sym in symbols:
         if sym not in close.columns:
-            stats[sym] = {"error": "No data."}
+            stats[sym] = {"error": "No data.", "error_code": "no_data"}
             continue
-        s = close[sym].dropna()
-        if len(s) < 2:
-            stats[sym] = {"error": "Not enough data."}
-            continue
-        first = cast(pd.Timestamp, s.index[0])
-        last = cast(pd.Timestamp, s.index[-1])
-        years = (last - first).days / 365.25
-        total = s.iloc[-1] / s.iloc[0] - 1
-        cagr = (1 + total) ** (1 / years) - 1 if years > 0 else None
-        rets = s.pct_change().dropna()
-        vol = rets.std() * math.sqrt(252)
-        drawdown = (s / s.cummax() - 1).min()
-        stats[sym] = {
-            "from": s.index[0].strftime("%Y-%m-%d"),
-            "to": s.index[-1].strftime("%Y-%m-%d"),
-            "total_return_pct": _num(total * 100, 2),
-            "annualized_return_pct": _num(cagr * 100, 2) if cagr is not None else None,
-            "annualized_volatility_pct": _num(vol * 100, 2),
-            "max_drawdown_pct": _num(drawdown * 100, 2),
-        }
-    return {"stats": stats}
+        try:
+            row = an.series_stats(close[sym], ppy, rf)
+            if has_bench and sym != bench:
+                pair = an.align_prices(close[[sym, bench]])
+                row["vs_benchmark"] = an.relative_stats(pair[sym], pair[bench], ppy, rf)
+        except ValueError as exc:
+            row = {"error": str(exc), "error_code": "insufficient_data"}
+        stats[sym] = row
+    out: dict[str, Any] = {
+        "interval": interval,
+        "currency": base_currency.upper() if base_currency else "local",
+        "risk_free_rate_pct": risk_free_rate_pct,
+        "stats": stats,
+    }
+    if bench and not has_bench:
+        out["warnings"] = [f"benchmark {bench} returned no data"]
+    return out
 
 
 def get_correlation(
     tickers: list[str],
     start_date: str = DEFAULT_START,
     end_date: str | None = None,
-    interval: str = "1wk",
+    interval: Interval = "1wk",
+    base_currency: str | None = None,
 ) -> dict:
-    """Correlation matrix of returns between 2+ tickers (default weekly returns).
+    """Correlation matrix of returns between 2+ tickers (default weekly).
 
-    Note: tickers on different exchanges/currencies are compared in their
-    own local currency, which affects correlation.
+    Exchange holidays are forward-filled and only the common window is used.
+    Without `base_currency`, each series is in its own currency, so FX moves
+    affect the result; set e.g. base_currency="EUR" to measure as a euro
+    investor experiences it.
+
+    Args:
+        tickers: 2 or more Yahoo symbols.
+        start_date: YYYY-MM-DD. Defaults to 2020-01-01.
+        end_date: YYYY-MM-DD (exclusive).
+        interval: "1d", "1wk" or "1mo".
+        base_currency: Optional ISO code to convert all prices into first.
     """
-    symbols = _clean_tickers(tickers)
+    symbols = data.clean_symbols(tickers)
     if len(symbols) < 2:
-        return {"error": "Provide at least two tickers."}
+        return {"error": "Provide at least two tickers.", "error_code": "invalid_input"}
     try:
-        close = _download_close(symbols, start_date, end_date, interval)
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"Download failed: {e}"}
-    rets = close.pct_change().dropna(how="any")
-    if len(rets) < 3:
-        return {"error": "Not enough overlapping data."}
-    corr = rets.corr()
-    return {
+        close, info = data.prices_in_currency(
+            symbols, start_date, end_date, interval, base_currency
+        )
+    except YahooError as exc:
+        return exc.to_dict()
+    aligned = an.align_prices(close)
+    if len(aligned) < 4:
+        return YahooError(
+            "insufficient_data",
+            f"Only {len(aligned)} common dates across the tickers.",
+            "Use an earlier start_date or a finer interval.",
+        ).to_dict()
+    out: dict[str, Any] = {
         "interval": interval,
-        "observations": len(rets),
-        "correlation": {
-            a: {b: _num(corr.loc[a, b], 3) for b in corr.columns} for a in corr.index
-        },
+        "currency": base_currency.upper() if base_currency else "local",
+        "from": an.day(aligned.index[0]),
+        "to": an.day(aligned.index[-1]),
+        "observations": len(aligned) - 1,
+        "correlation": an.correlation_matrix(aligned),
     }
+    if info["missing"]:
+        out["missing"] = info["missing"]
+    return out
 
 
 def get_dividends(
     ticker: str, start_date: str = DEFAULT_START, end_date: str | None = None
 ) -> dict:
-    """Get dividend payments for a ticker in a date range."""
+    """Dividend payments per share for a ticker, plus a trailing-12-month total.
+
+    Amounts are per share as Yahoo reports them; this can be the fund's
+    distribution currency rather than the listing's trading currency (e.g. a
+    USD-distributing ETF listed in GBP), so check before computing a yield.
+
+    Args:
+        ticker: Yahoo symbol.
+        start_date: YYYY-MM-DD. Defaults to 2020-01-01.
+        end_date: YYYY-MM-DD (exclusive).
+    """
     sym = ticker.strip().upper()
     try:
         div = yf.Ticker(sym).dividends
-    except Exception as e:  # noqa: BLE001
-        return {"error": f"Lookup failed: {e}"}
+    except Exception as exc:  # noqa: BLE001
+        return data.missing_data_error([sym]).to_dict() | {"detail": str(exc)}
     if div is None or div.empty:
+        if not data.yahoo_reachable():
+            return data.missing_data_error([sym]).to_dict()
         return {"ticker": sym, "dividends": {}, "note": "No dividends found."}
-    dt_index = cast(pd.DatetimeIndex, div.index)
-    idx = dt_index.tz_localize(None) if dt_index.tz is not None else dt_index
     div = div.copy()
-    div.index = idx
-    div = div[div.index >= pd.Timestamp(start_date)]
+    div.index = pd.DatetimeIndex(div.index).tz_localize(None)
+    last_year = div[div.index > div.index.max() - pd.DateOffset(years=1)]
+    sel = div[div.index >= pd.Timestamp(start_date)]
     if end_date:
-        div = div[div.index < pd.Timestamp(end_date)]
+        sel = sel[sel.index < pd.Timestamp(end_date)]
     return {
         "ticker": sym,
-        "total": _num(div.sum(), 4),
-        "dividends": {
-            cast(pd.Timestamp, d).strftime("%Y-%m-%d"): _num(v, 4)
-            for d, v in div.items()
-        },
+        "total": an.num(sel.sum(), 4),
+        "count": len(sel),
+        "trailing_12m_total": an.num(last_year.sum(), 4),
+        "payments_last_12m": len(last_year),
+        "dividends": {an.day(d): an.num(v, 4) for d, v in sel.items()},
     }
 
 
@@ -414,6 +489,7 @@ TOOLS = [
     get_etf_sector_allocation,
     get_etf_holdings,
     get_quote,
+    get_fx_rates,
     get_performance_stats,
     get_correlation,
     get_dividends,
@@ -423,4 +499,4 @@ TOOLS = [
 def register(mcp: FastMCP) -> None:
     """Register all Yahoo Finance tools on the given server."""
     for tool in TOOLS:
-        mcp.tool()(tool)
+        mcp.tool(annotations=READ_ONLY)(tool)

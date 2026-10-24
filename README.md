@@ -1,26 +1,40 @@
 # Finance MCP (portfolio analysis)
 
-One MCP server, one Python package (`finance_mcp`), two data sources:
+One MCP server, one Python package (`finance_mcp`), two data sources plus tools that join them:
 
-- `finance_mcp/yahoo/`: prices, quotes, performance, correlation, dividends via
+- `finance_mcp/yahoo/`: prices, quotes, FX, performance, correlation, dividends via
   [yfinance](https://pypi.org/project/yfinance/) (unofficial, personal use only). Data can be delayed (up to ~15-20 min).
+  `analytics.py` holds the maths (pure, tested offline), `data.py` the downloads, currencies and FX.
 - `finance_mcp/justetf/`: ETF details (costs, size, exposure, search by name) from justETF, see below.
+- `finance_mcp/portfolio/`: ISIN -> Yahoo ticker resolution and whole-portfolio risk in one base currency.
 
-`finance_mcp/server.py` builds the server and registers both. No API key needed.
+`finance_mcp/server.py` builds the server and registers all three. No API key needed. All tools are read-only
+(annotated `readOnlyHint`), and failures come back as `{"error", "error_code", "hint"}` with `error_code` one of
+`invalid_input`, `no_data`, `upstream_unavailable`, `fx_unavailable`, `insufficient_data`.
 
-## Tools
+## Portfolio tools (start here for portfolio analysis)
 
 | Tool | What it does |
 |------|--------------|
-| `get_price_history` | Adjusted close prices for one or more tickers. Default 2020-01-01 to latest; optional `start_date`, `end_date`, `interval` (1d/1wk/1mo). Long series are thinned to ~400 points. |
-| `search_symbol` | Company/ETF name -> several ticker candidates (exchange, type). The LLM should ask you which listing you hold. |
+| `analyze_portfolio_risk` | Positions as `{symbol or isin, quantity or value}` (stocks and ETFs mixed). Converts everything to `base_currency` with daily FX (pence-quoted London listings handled), aligns calendars, and returns value and weights, return, volatility, Sharpe/Sortino/Calmar, max drawdown with dates, beta/alpha/tracking error vs a `benchmark`, per-position risk contribution, correlation matrix and diversification ratio. Warns about short histories and stale quotes. |
+| `resolve_instrument` | ISIN -> ranked Yahoo tickers. ETFs via their justETF exchange listings (XETRA -> `.DE`, Amsterdam -> `.AS`, London -> `.L`, SIX -> `.SW`, ...), other ISINs via Yahoo search. |
+
+Use `analyze_portfolio` (justETF) alongside it for costs and country/sector/stock look-through of the ETFs.
+
+## Yahoo tools
+
+| Tool | What it does |
+|------|--------------|
+| `get_price_history` | Adjusted close prices for one or more tickers, optionally converted to `base_currency`. Default 2020-01-01 to latest; `interval` 1d/1wk/1mo. Long series are thinned to ~400 points. |
+| `search_symbol` | Company/ETF name or ISIN -> several ticker candidates (exchange, type). The LLM should ask you which listing you hold. |
 | `get_symbol_info` | Ticker -> name, exchange, currency, type, sector. |
-| `get_etf_sector_allocation` | Sector weights (%) of an ETF. |
+| `get_etf_sector_allocation` | Sector weights (%) of an ETF (patchy for UCITS ETFs; prefer `get_etf_exposure`). |
 | `get_etf_holdings` | Top holdings with % weight (Yahoo usually exposes ~10 only). |
-| `get_quote` | Latest price, previous close, change %, currency, exchange. |
-| `get_performance_stats` | Total return, annualized return, volatility, max drawdown. |
-| `get_correlation` | Correlation matrix of returns (default weekly). |
-| `get_dividends` | Dividend history. |
+| `get_quote` | Latest price, previous close, change %, currency (`GBp` = pence), exchange. |
+| `get_fx_rates` | Latest FX rates into a base currency, optional change since a date. |
+| `get_performance_stats` | Total/annualised return (annualised only for windows of 1y+), volatility scaled to the interval, Sharpe, Sortino, Calmar, max drawdown with dates; optional `base_currency`, `risk_free_rate_pct`, `benchmark` (beta, alpha, tracking error, information ratio). |
+| `get_correlation` | Correlation matrix of returns on a common calendar (default weekly), optional `base_currency`. |
+| `get_dividends` | Dividend history plus trailing-12-month total and payment count. |
 
 ## justETF tools (ETF look-up by ISIN)
 
@@ -46,7 +60,7 @@ profile you fetch adds the ETF, all its listing tickers and its "similar ETFs" t
 (`<cache dir>/registry.json`). If a fund is unknown, give the ISIN once and it is remembered.
 
 Limits: justETF itemises only the top ~10 countries / ~13 sectors / top 10 holdings, so portfolio exposure per named
-bucket is a lower bound. Tests run offline: `uv run pytest`.
+bucket is a lower bound. All tests run offline (no network): `uv run pytest`.
 
 ## Setup
 
@@ -113,7 +127,8 @@ For Claude Code: `claude mcp add finance -- /absolute/path/to/.venv/bin/python -
 ## Notes and limitations
 
 - Use Yahoo exchange suffixes: `ASML.AS` (Amsterdam), `VWCE.DE` (Xetra), `SAP.DE`, `AAPL` (US).
-- Prices are in each listing's local currency; correlations across currencies are affected by FX.
+- Prices are in each listing's local currency unless you pass `base_currency`; `analyze_portfolio_risk` always converts.
+- Dividends are per share as Yahoo reports them, which can be the fund's distribution currency rather than the listing's.
 - ETF holdings/sector data on Yahoo is often partial for European UCITS ETFs.
 - yfinance is unofficial: Yahoo can rate limit bursts or change things and break it. Run `uv lock --upgrade-package yfinance && uv sync` if calls start failing.
 - `mcp` is pinned to `<2` because this code uses the v1 `FastMCP` API.
