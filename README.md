@@ -1,7 +1,7 @@
 # Portfolio Analytics MCP
 
 [![CI](https://github.com/RugSec/portfolio-analytics-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/RugSec/portfolio-analytics-mcp/actions/workflows/ci.yml)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Ask Claude about your investments in plain language.** This is an
@@ -41,7 +41,7 @@ Claude picks the right tools, fetches the data and explains the result.
 ## Quickstart
 
 You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and
-Python 3.11+.
+Python 3.12.
 
 **1. Install**
 

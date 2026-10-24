@@ -6,7 +6,7 @@ approach.
 
 ## Setup
 
-You need [uv](https://docs.astral.sh/uv/) and Python 3.11+. Formatting
+You need [uv](https://docs.astral.sh/uv/) and Python 3.12. Formatting
 Markdown and YAML also needs [Node.js](https://nodejs.org) (Prettier runs
 through `npx`, nothing to install).
 
@@ -33,7 +33,7 @@ Tasks run with [poe](https://poethepoet.natn.io/) (`poe -h` lists them):
 | `poe check`        | Quick check: lint + typecheck                                      |
 
 **Run `poe ci-checks` before opening a pull request.** GitHub Actions runs
-the same command on Python 3.11, 3.12 and 3.13.
+the same command on Python 3.12.
 
 To try the tools interactively, use the MCP inspector:
 `mcp dev finance_mcp/server.py`. To check that Yahoo is reachable from your

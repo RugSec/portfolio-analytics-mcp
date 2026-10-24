@@ -3,7 +3,7 @@ name = "portfolio-analytics-mcp"
 version = "0.1.0"
 description = "MCP server for portfolio analysis with Yahoo Finance and justETF data"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.12.*"
 dependencies = [
     "mcp[cli]>=1.9.0,<2",
     "yfinance>=0.2.50",
@@ -38,7 +38,7 @@ dev = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 # D: docstrings (Google style), ANN: type hints, DOC201: Returns sections.
@@ -57,7 +57,7 @@ convention = "google"
 "tests/*" = ["E501", "D417", "DOC201"]
 
 [tool.basedpyright]
-pythonVersion = "3.11"
+pythonVersion = "3.12"
 typeCheckingMode = "standard"
 include = ["finance_mcp"]
 
