@@ -17,7 +17,14 @@ _NUM_RE = re.compile(r"-?\d[\d,]*\.?\d*")
 
 # ------------------------------------------------------------------ helpers
 def _text(node: Tag | None) -> str | None:
-    """Whitespace-normalised text of a node, or None if empty/missing."""
+    """Get the whitespace-normalised text of a node.
+
+    Args:
+        node: A parsed tag, or None.
+
+    Returns:
+        The text, or None if the node is missing, empty or just "-".
+    """
     if node is None:
         return None
     value = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
@@ -25,18 +32,43 @@ def _text(node: Tag | None) -> str | None:
 
 
 def _tid(root: Tag | BeautifulSoup, testid: str) -> Tag | None:
+    """Find the first element with a given ``data-testid``.
+
+    Args:
+        root: Where to search.
+        testid: The ``data-testid`` value.
+
+    Returns:
+        The element, or None.
+    """
     return root.select_one(f'[data-testid="{testid}"]')
 
 
 def _tid_text(root: Tag | BeautifulSoup, testid: str) -> str | None:
+    """Get the text of the first element with a given ``data-testid``.
+
+    Args:
+        root: Where to search.
+        testid: The ``data-testid`` value.
+
+    Returns:
+        The normalised text, or None.
+    """
     return _text(_tid(root, testid))
 
 
 def to_number(value: str | None) -> float | None:
-    """Parse '+16.97%', '1,252', '0.20% p.a.' or '1.71' to a float."""
+    """Parse '+16.97%', '1,252', '0.20% p.a.' or '1.71' to a float.
+
+    Args:
+        value: Text containing one number, or None.
+
+    Returns:
+        The first number in the text, or None if there is none.
+    """
     if not value:
         return None
-    match = _NUM_RE.search(value.replace("−", "-"))
+    match = _NUM_RE.search(value.replace("−", "-"))  # Unicode minus -> ASCII
     if not match:
         return None
     try:
@@ -46,11 +78,26 @@ def to_number(value: str | None) -> float | None:
 
 
 def _slug(label: str) -> str:
+    """Turn a label into a snake_case key ("Fund Structure" -> "fund_structure").
+
+    Args:
+        label: Human-readable label.
+
+    Returns:
+        The key.
+    """
     return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
 
 
 def parse_fund_size(value: str | None) -> dict[str, Any] | None:
-    """'EUR 132,896 m' -> {'currency': 'EUR', 'amount_mn': 132896.0}."""
+    """Parse a fund size like 'EUR 132,896 m' into currency and millions.
+
+    Args:
+        value: Fund size text with a currency, amount and m/bn/k unit.
+
+    Returns:
+        ``{"currency", "amount_mn"}``, or None if it cannot be parsed.
+    """
     if not value:
         return None
     match = re.search(r"([A-Z]{3})\s*([\d,.]+)\s*(m|bn|k)?", value)
@@ -62,7 +109,14 @@ def parse_fund_size(value: str | None) -> dict[str, Any] | None:
 
 
 def _kv_rows(panel: Tag | None) -> dict[str, str | None]:
-    """Label/value pairs from a two-column table (td.vallabel + next td)."""
+    """Read label/value pairs from a two-column table (td.vallabel + next td).
+
+    Args:
+        panel: The element containing the table, or None.
+
+    Returns:
+        ``{slug(label): value}``; empty if the panel is missing.
+    """
     out: dict[str, str | None] = {}
     if panel is None:
         return out
@@ -74,7 +128,15 @@ def _kv_rows(panel: Tag | None) -> dict[str, str | None]:
 
 
 def _weight_rows(root: Tag | BeautifulSoup, group: str) -> list[dict[str, Any]]:
-    """Name/percentage rows for 'countries' or 'sectors'."""
+    """Read name/percentage rows for 'countries' or 'sectors'.
+
+    Args:
+        root: Page or fragment to search.
+        group: ``"countries"`` or ``"sectors"``.
+
+    Returns:
+        ``[{"name", "weight_pct"}, ...]`` in page order.
+    """
     rows = []
     for row in root.select(f'[data-testid="etf-holdings_{group}_row"]'):
         name = _tid_text(row, f"tl_etf-holdings_{group}_value_name")
@@ -85,15 +147,38 @@ def _weight_rows(root: Tag | BeautifulSoup, group: str) -> list[dict[str, Any]]:
 
 
 def _ajax_html(xml: str) -> BeautifulSoup:
-    """Concatenate the CDATA payloads of a Wicket ajax-response."""
+    """Concatenate the CDATA payloads of a Wicket ajax-response.
+
+    Args:
+        xml: The raw ``<ajax-response>`` text.
+
+    Returns:
+        The embedded HTML, parsed.
+    """
     parts = re.findall(r"<!\[CDATA\[(.*?)\]\]>", xml, re.S)
     return BeautifulSoup("".join(parts), "html.parser")
 
 
 # ------------------------------------------------------------------ sections
 def _parse_basics(soup: BeautifulSoup) -> dict[str, Any]:
+    """Read the "Basics" table (index, replication, currency, domicile...).
+
+    Args:
+        soup: The profile page.
+
+    Returns:
+        One entry per basics field, None when missing.
+    """
 
     def g(key: str) -> str | None:
+        """Get one basics value by its key.
+
+        Args:
+            key: Suffix of the ``tl_etf-basics_value_`` test id.
+
+        Returns:
+            The value text, or None.
+        """
         return _tid_text(soup, f"tl_etf-basics_value_{key}")
 
     return {
@@ -115,12 +200,21 @@ def _parse_basics(soup: BeautifulSoup) -> dict[str, Any]:
 
 
 def _parse_panels(soup: BeautifulSoup) -> dict[str, Any]:
+    """Read the collapsible legal, replication and tax panels.
+
+    Args:
+        soup: The profile page.
+
+    Returns:
+        ``legal_structure``, ``replication_details`` and ``tax_status`` dicts.
+    """
     legal = _kv_rows(soup.select_one("#collapse-legal"))
     replication = _kv_rows(soup.select_one("#collapse-replication"))
     tax: dict[str, str | None] = {}
     panel = soup.select_one("#collapse-tax")
     if panel:
         for row in panel.select("tr"):
+            # Country / status rows; skip empty cells (icons, spacers).
             cells = [_text(c) for c in row.find_all("td", recursive=False)]
             cells = [c for c in cells if c]
             if len(cells) >= 2:
@@ -133,6 +227,14 @@ def _parse_panels(soup: BeautifulSoup) -> dict[str, Any]:
 
 
 def _parse_returns(soup: BeautifulSoup) -> dict[str, Any]:
+    """Read period and calendar-year returns and the currency they are in.
+
+    Args:
+        soup: The profile page.
+
+    Returns:
+        ``currency``, ``period_returns_pct`` and ``calendar_year_returns_pct``.
+    """
     periods = {
         "ytd": "ytd-return",
         "1m": "month-return",
@@ -148,6 +250,7 @@ def _parse_returns(soup: BeautifulSoup) -> dict[str, Any]:
         for key, tid in periods.items()
     }
     calendar: dict[str, float | None] = {}
+    # Calendar years are numbered columns 1..n; stop at the first missing one.
     for i in range(1, 12):
         year = _tid_text(soup, f"etf-returns-section_year-title-{i}")
         if not year:
@@ -166,21 +269,48 @@ def _parse_returns(soup: BeautifulSoup) -> dict[str, Any]:
 
 
 def _parse_risk(soup: BeautifulSoup) -> dict[str, float | None]:
+    """Read the risk table (volatility, max drawdown, return per risk).
+
+    Args:
+        soup: The profile page.
+
+    Returns:
+        ``{slug(label): number}``.
+    """
     raw = _kv_rows(_tid(soup, "etf-risk_table_panel"))
     return {key: to_number(value) for key, value in raw.items()}
 
 
 def _parse_listings(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """Read the stock exchange listings table.
+
+    Args:
+        soup: The profile page.
+
+    Returns:
+        One dict per listing: MIC code, exchange, currency, ticker, codes.
+    """
     listings = []
     pattern = re.compile(r"^etf-trade-data-panel_row-([a-z0-9]+)$")
     for row in soup.select('[data-testid^="etf-trade-data-panel_row-"]'):
         match = pattern.match(str(row.get("data-testid", "")))
-        if not match:
+        if not match:  # cells share the row prefix (e.g. ..._row-xetr_ticker)
             continue
         code = match.group(1)
         prefix = f"etf-trade-data-panel_row-{code}_"
 
+        # Default arguments bind this row/prefix (not the loop's last values).
         def g(suffix: str, row: Tag = row, prefix: str = prefix) -> str | None:
+            """Get one cell of this listing row.
+
+            Args:
+                suffix: Cell name, e.g. "ticker".
+                row: The listing row.
+                prefix: Test id prefix of the row.
+
+            Returns:
+                The cell text, or None.
+            """
             return _tid_text(row, prefix + suffix)
 
         listings.append(
@@ -197,9 +327,17 @@ def _parse_listings(soup: BeautifulSoup) -> list[dict[str, Any]]:
 
 
 def _parse_similar(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """Read the "further ETFs on the same index" table.
+
+    Args:
+        soup: The profile page.
+
+    Returns:
+        One dict per ETF: ISIN, name, fund size, TER, policy, replication.
+    """
     similar = []
     for row in soup.select('[data-testid^="etf-further-info-en_related-etf-row-"]'):
-        isin = str(row["data-testid"]).rsplit("-", 1)[-1]
+        isin = str(row["data-testid"]).rsplit("-", 1)[-1]  # ...-row-<ISIN>
         cells = [_text(c) for c in row.find_all("td", recursive=False)]
         if len(cells) < 5:
             continue
@@ -217,6 +355,14 @@ def _parse_similar(soup: BeautifulSoup) -> list[dict[str, Any]]:
 
 
 def _parse_top_holdings(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """Read the top-10 holdings table.
+
+    Args:
+        soup: The profile page.
+
+    Returns:
+        One dict per holding: name, ISIN (from the link) and weight.
+    """
     holdings = []
     for row in soup.select('[data-testid="etf-holdings_top-holdings_row"]'):
         link = _tid(row, "tl_etf-holdings_top-holdings_link_name")
@@ -225,7 +371,7 @@ def _parse_top_holdings(soup: BeautifulSoup) -> list[dict[str, Any]]:
         )
         if link is None or weight is None:
             continue
-        href = str(link.get("href", ""))
+        href = str(link.get("href", ""))  # /en/stock-profiles/<ISIN>
         holdings.append(
             {
                 "name": _text(link),
@@ -262,6 +408,8 @@ def parse_profile(html: str, fragments: dict[str, str] | None = None) -> dict[st
     fragments = fragments or {}
     countries = _weight_rows(soup, "countries")
     sectors = _weight_rows(soup, "sectors")
+    # The page shows ~5 rows per list; the "Show more" fragment has the full
+    # list. Use it unless it came back shorter (a broken fragment).
     for key, current in (("countries", countries), ("sectors", sectors)):
         if key in fragments:
             full = _weight_rows(_ajax_html(fragments[key]), key)

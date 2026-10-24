@@ -27,7 +27,14 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 
 
 def _quality_warnings(info: dict[str, Any]) -> list[str]:
-    """Warnings for bad Yahoo prices that were dropped before computing."""
+    """Turn the bad Yahoo prices dropped before computing into warnings.
+
+    Args:
+        info: The ``info`` dict from ``data.prices_in_currency``.
+
+    Returns:
+        One warning per symbol with removed prices.
+    """
     return [
         f"{sym}: dropped {len(d)} bad price(s) that jumped and fully reversed "
         f"next period (Yahoo data error): {', '.join(d)}"
@@ -64,6 +71,10 @@ def get_price_history(
         interval: "1d", "1wk" or "1mo".
         base_currency: Optional ISO code (e.g. "EUR") to convert all prices
             into with daily FX; default is each listing's own currency.
+
+    Returns:
+        Per ticker: first/last date, last price, points, `thinned` and
+        `prices` by date; or an error dict.
     """
     symbols = data.clean_symbols(tickers)
     try:
@@ -83,6 +94,8 @@ def get_price_history(
         s = close[sym].dropna()
         thinned = False
         if len(s) > MAX_ROWS_PER_TICKER:
+            # Keep every step-th point, plus the last one so the latest price
+            # is always present.
             step = math.ceil(len(s) / MAX_ROWS_PER_TICKER)
             idx = list(range(0, len(s), step))
             if idx[-1] != len(s) - 1:
@@ -125,6 +138,9 @@ def search_symbol(query: str, max_results: int = 10) -> dict:
     Args:
         query: Name, ticker fragment or ISIN.
         max_results: Maximum candidates (1-25).
+
+    Returns:
+        `candidates` (symbol, name, type, exchange, sector) and a `note`.
     """
     try:
         res = yf.Search(query, max_results=max(1, min(max_results, 25)), news_count=0)
@@ -161,6 +177,9 @@ def get_symbol_info(ticker: str) -> dict:
 
     Args:
         ticker: Yahoo symbol, e.g. "ASML.AS".
+
+    Returns:
+        The known fields (empty ones left out), or an error dict.
     """
     sym = ticker.strip().upper()
     try:
@@ -191,6 +210,17 @@ def get_symbol_info(ticker: str) -> dict:
 # 3 + 4. ETF composition
 # --------------------------------------------------------------------------
 def _funds_data(sym: str) -> Any:
+    """Get yfinance's fund data object for a symbol.
+
+    Args:
+        sym: Yahoo symbol of a fund.
+
+    Returns:
+        The ``funds_data`` object.
+
+    Raises:
+        YahooError: if yfinance cannot load it.
+    """
     try:
         return yf.Ticker(sym).funds_data
     except Exception as exc:  # noqa: BLE001
@@ -205,6 +235,9 @@ def get_etf_sector_allocation(ticker: str) -> dict:
 
     Args:
         ticker: Yahoo symbol of the fund, e.g. "SPY", "IWDA.AS".
+
+    Returns:
+        `sector_allocation_pct` by sector, largest first; or an error dict.
     """
     sym = ticker.strip().upper()
     try:
@@ -235,6 +268,10 @@ def get_etf_holdings(ticker: str) -> dict:
 
     Args:
         ticker: Yahoo symbol of the fund, e.g. "QQQ", "IWDA.AS".
+
+    Returns:
+        `holdings` (symbol, name, weight_pct) and `total_pct_covered`; or an
+        error dict.
     """
     sym = ticker.strip().upper()
     try:
@@ -275,6 +312,10 @@ def get_quote(tickers: list[str]) -> dict:
 
     Args:
         tickers: Yahoo symbols, e.g. ["IWDA.AS", "VWRL.L", "AAPL"].
+
+    Returns:
+        `as_of` and per ticker price, previous close, change %, currency and
+        exchange (or an error entry).
     """
     out: dict[str, Any] = {}
     for sym in data.clean_symbols(tickers):
@@ -301,6 +342,7 @@ def get_quote(tickers: list[str]) -> dict:
             "currency": currency,
             "exchange": exchange,
         }
+    # Only when every lookup failed is it worth checking for an outage.
     if out and all("error" in v for v in out.values()) and not data.yahoo_reachable():
         return data.missing_data_error(list(out)).to_dict()
     return {"as_of": date.today().isoformat(), "quotes": out}
@@ -319,11 +361,16 @@ def get_fx_rates(
         currencies: ISO codes, e.g. ["USD", "GBP", "CHF"].
         base_currency: ISO code to express rates in. Default EUR.
         start_date: Optional YYYY-MM-DD to also return the % change since then.
+
+    Returns:
+        `base_currency` and per currency `rate` and `date` (plus
+        `start_rate` and `change_since_start_pct` with start_date).
     """
     base = base_currency.strip().upper()
     wanted = {c.strip(): an.major_currency(c.strip()) for c in currencies if c.strip()}
     if not wanted:
         return {"error": "No currencies given.", "error_code": "invalid_input"}
+    # Without start_date a short window is enough to find the latest rate.
     start = start_date or an.day(pd.Timestamp.today() - pd.Timedelta(days=10))
     try:
         fx = data.download_fx({m or "" for m, _ in wanted.values()}, base, start, None)
@@ -374,9 +421,14 @@ def get_performance_stats(
             for a euro investor holding USD assets); default local currency.
         risk_free_rate_pct: Annual risk-free rate in %, for Sharpe/Sortino.
         benchmark: Optional Yahoo symbol to compare against, e.g. "IWDA.AS".
+
+    Returns:
+        `stats` per ticker (with `vs_benchmark` when given), the currency used
+        and any `warnings`; or an error dict.
     """
     symbols = data.clean_symbols(tickers)
     bench = data.clean_symbols([benchmark])[0] if benchmark else None
+    # Download the benchmark together with the tickers (once).
     wanted = symbols + ([bench] if bench and bench not in symbols else [])
     try:
         close, info = data.prices_in_currency(
@@ -395,6 +447,7 @@ def get_performance_stats(
         try:
             row = an.series_stats(close[sym], ppy, rf)
             if has_bench and sym != bench:
+                # Compare on the dates both have, not the full common window.
                 pair = an.align_prices(close[[sym, bench]])
                 row["vs_benchmark"] = an.relative_stats(pair[sym], pair[bench], ppy, rf)
         except ValueError as exc:
@@ -438,6 +491,10 @@ def get_correlation(
         end_date: YYYY-MM-DD (exclusive).
         interval: "1d", "1wk" or "1mo".
         base_currency: Optional ISO code to convert all prices into first.
+
+    Returns:
+        The `correlation` matrix with its window and observations, plus
+        `missing` tickers and `warnings`; or an error dict.
     """
     symbols = data.clean_symbols(tickers)
     if len(symbols) < 2:
@@ -487,6 +544,10 @@ def get_dividends(
         ticker: Yahoo symbol.
         start_date: YYYY-MM-DD. Defaults to 2020-01-01.
         end_date: YYYY-MM-DD (exclusive).
+
+    Returns:
+        `dividends` by date in the range with their `total` and `count`, plus
+        `trailing_12m_total` and `payments_last_12m`; or an error dict.
     """
     sym = ticker.strip().upper()
     try:
@@ -499,6 +560,7 @@ def get_dividends(
         return {"ticker": sym, "dividends": {}, "note": "No dividends found."}
     div = div.copy()
     div.index = pd.DatetimeIndex(div.index).tz_localize(None)
+    # Trailing 12 months counts back from the latest payment, not from today.
     last_year = div[div.index > div.index.max() - pd.DateOffset(years=1)]
     sel = div[div.index >= pd.Timestamp(start_date)]
     if end_date:
@@ -528,6 +590,10 @@ TOOLS = [
 
 
 def register(mcp: FastMCP) -> None:
-    """Register all Yahoo Finance tools on the given server."""
+    """Register all Yahoo Finance tools on the given server.
+
+    Args:
+        mcp: The FastMCP server.
+    """
     for tool in TOOLS:
         mcp.tool(annotations=READ_ONLY)(tool)

@@ -17,7 +17,11 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 
 
 def register(mcp: FastMCP) -> None:
-    """Register the portfolio tools on the given server."""
+    """Register the portfolio tools on the given server.
+
+    Args:
+        mcp: The FastMCP server.
+    """
 
     @mcp.tool(annotations=READ_ONLY)
     def resolve_instrument(isin: str, base_currency: str | None = None) -> dict:
@@ -35,6 +39,10 @@ def register(mcp: FastMCP) -> None:
         Args:
             isin: 12-character ISIN, e.g. IE00B4L5Y983.
             base_currency: Optional ISO code to prefer listings trading in it.
+
+        Returns:
+            `yahoo_candidates` best first, the `source` used and any
+            `unmapped_listings`; or an error dict.
         """
         try:
             return resolve_isin(isin, base_currency)
@@ -62,16 +70,8 @@ def register(mcp: FastMCP) -> None:
         by quantity (shares) or current value (in base currency); with
         neither, positions are equally weighted. Prices are converted to the
         base currency with daily FX (pence-quoted London listings handled),
-        put on a common calendar, and analysed.
-
-        Returns: total value and weights; portfolio return, volatility,
-        Sharpe/Sortino/Calmar, max drawdown (dates); vs `benchmark` beta,
-        alpha, tracking error, information ratio; per position return,
-        volatility, beta and share of portfolio risk; correlation matrix;
-        diversification ratio; how ISINs were resolved; FX rates used;
-        warnings (short histories, stale quotes, bad Yahoo prices removed).
-        Use analyze_portfolio (justETF) for cost and country/sector/stock
-        look-through of ETFs.
+        put on a common calendar, and analysed. Use analyze_portfolio
+        (justETF) for cost and country/sector/stock look-through of ETFs.
 
         Example positions: [{"isin": "IE00B4L5Y983", "value": 30000},
         {"symbol": "ASML.AS", "quantity": 10}, {"symbol": "AAPL", "quantity": 25}]
@@ -88,6 +88,15 @@ def register(mcp: FastMCP) -> None:
             method: "current_holdings" (today's units held throughout) or
                 "constant_weights" (rebalanced to today's weights each period).
             risk_free_rate_pct: Annual risk-free rate in %, e.g. 2.0.
+
+        Returns:
+            Total value and weights; portfolio return, volatility,
+            Sharpe/Sortino/Calmar, max drawdown (dates); vs `benchmark` beta,
+            alpha, tracking error, information ratio; per position return,
+            volatility, beta and share of portfolio risk; correlation matrix;
+            diversification ratio; how ISINs were resolved; FX rates used;
+            warnings (short histories, stale quotes, bad Yahoo prices
+            removed). Or an error dict.
         """
         try:
             return risk.analyze_portfolio_risk(

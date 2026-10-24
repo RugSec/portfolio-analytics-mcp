@@ -1,6 +1,9 @@
-"""Offline tests for the pure return/risk maths (synthetic prices)."""
+"""Pure return/risk maths on synthetic prices."""
+
+from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -9,26 +12,33 @@ import pytest
 from finance_mcp.yahoo import analytics as an
 
 
-def series(values, start="2024-01-01", freq="B"):
+def series(
+    values: Sequence[float] | np.ndarray, start: str = "2024-01-01", freq: str = "B"
+) -> pd.Series:
+    """Wrap values in a float series on a regular date index."""
     return pd.Series(
         values, index=pd.date_range(start, periods=len(values), freq=freq), dtype=float
     )
 
 
-def random_prices(n=600, vol=0.01, seed=0, drift=0.0003):
+def random_prices(
+    n: int = 600, vol: float = 0.01, seed: int = 0, drift: float = 0.0003
+) -> pd.Series:
+    """Build a reproducible random-walk price series of ``n`` business days."""
     rng = np.random.default_rng(seed)
     return series(100 * np.cumprod(1 + rng.normal(drift, vol, n)))
 
 
-# ------------------------------------------------------------------ currency
-def test_major_currency_handles_minor_units():
+def test_major_currency_handles_minor_units() -> None:
+    """Minor units (pence etc.) map to the ISO currency and a factor."""
     assert an.major_currency("GBp") == ("GBP", 0.01)
     assert an.major_currency("GBX") == ("GBP", 0.01)
     assert an.major_currency("usd") == ("USD", 1.0)
     assert an.major_currency(None) == (None, 1.0)
 
 
-def test_to_base_currency_converts_and_fills_fx():
+def test_to_base_currency_converts_and_fills_fx() -> None:
+    """Prices are converted with FX forward-filled over missing days."""
     idx = pd.to_datetime(["2026-01-05", "2026-01-06", "2026-01-07"])
     prices = pd.DataFrame(
         {"AAPL": [100.0, 110.0, 120.0], "VUSA.L": [5000.0, 5000.0, 5000.0],
@@ -45,7 +55,8 @@ def test_to_base_currency_converts_and_fills_fx():
     assert out["SAP.DE"].tolist() == [200.0, 200.0, 200.0]
 
 
-def test_to_base_currency_errors_on_missing_fx():
+def test_to_base_currency_errors_on_missing_fx() -> None:
+    """A missing FX rate or quote currency raises ValueError."""
     prices = pd.DataFrame(
         {"X": [1.0, 2.0]}, index=pd.date_range("2026-01-01", periods=2)
     )
@@ -55,8 +66,8 @@ def test_to_base_currency_errors_on_missing_fx():
         an.to_base_currency(prices, {"X": None}, pd.DataFrame(), "EUR")
 
 
-# ------------------------------------------------------------------ data quality
-def test_remove_spikes_drops_reversed_jumps_only():
+def test_remove_spikes_drops_reversed_jumps_only() -> None:
+    """Only jumps that fully reverse next period are dropped as bad prints."""
     idx = pd.date_range("2025-10-20", periods=8, freq="B")
     prices = pd.DataFrame(
         {
@@ -77,8 +88,8 @@ def test_remove_spikes_drops_reversed_jumps_only():
     assert cleaned["NORMAL"].equals(prices["NORMAL"])
 
 
-# ------------------------------------------------------------------ calendar
-def test_align_prices_fills_holidays_and_trims_to_common_window():
+def test_align_prices_fills_holidays_and_trims_to_common_window() -> None:
+    """Holidays are filled and the window starts when every series has data."""
     idx = pd.date_range("2026-01-01", periods=5, freq="D")
     prices = pd.DataFrame(
         {"A": [1.0, 2.0, np.nan, 4.0, 5.0], "B": [np.nan, np.nan, 3.0, 3.0, np.nan]},
@@ -90,7 +101,8 @@ def test_align_prices_fills_holidays_and_trims_to_common_window():
     assert out["B"].tolist() == [3.0, 3.0, 3.0]  # B's lagging last quote filled
 
 
-def test_window_report_flags_short_history_and_stale_quotes():
+def test_window_report_flags_short_history_and_stale_quotes() -> None:
+    """Short histories and stale last quotes are reported."""
     idx = pd.date_range("2026-01-01", periods=10, freq="D")
     prices = pd.DataFrame(
         {"OLD": np.arange(10.0) + 1, "NEW": [np.nan] * 4 + list(range(6)),
@@ -102,8 +114,8 @@ def test_window_report_flags_short_history_and_stale_quotes():
     assert rep["stale"] == {"STALE": "2026-01-05"}
 
 
-# ------------------------------------------------------------------ single series
-def test_max_drawdown_dates():
+def test_max_drawdown_dates() -> None:
+    """Max drawdown reports peak, trough and recovery dates."""
     s = series([100, 120, 90, 110, 125, 100])
     dd = an.max_drawdown(s)
     assert dd["max_drawdown_pct"] == -25.0
@@ -112,7 +124,8 @@ def test_max_drawdown_dates():
     assert dd["recovery_date"] == "2024-01-05"
 
 
-def test_series_stats_constant_growth():
+def test_series_stats_constant_growth() -> None:
+    """Constant growth has zero volatility and no Sharpe ratio."""
     s = series(100 * 1.001 ** np.arange(400))
     st = an.series_stats(s, 252)
     assert st["annualized_volatility_pct"] == pytest.approx(0.0, abs=1e-6)
@@ -122,13 +135,15 @@ def test_series_stats_constant_growth():
     assert st["sharpe_ratio"] is None  # zero volatility
 
 
-def test_series_stats_no_annualising_short_windows():
+def test_series_stats_no_annualising_short_windows() -> None:
+    """Returns under one year are not annualised."""
     st = an.series_stats(random_prices(100), 252)
     assert st["years"] < 1 and st["annualized_return_pct"] is None
     assert st["annualized_volatility_pct"] > 0
 
 
-def test_series_stats_volatility_scales_with_interval():
+def test_series_stats_volatility_scales_with_interval() -> None:
+    """Daily volatility is annualised with sqrt(252); 2 points is too few."""
     s = random_prices(800, vol=0.01, drift=0.0)
     daily = an.series_stats(s, 252)["annualized_volatility_pct"]
     assert daily == pytest.approx(1.0 * math.sqrt(252), rel=0.1)
@@ -136,7 +151,8 @@ def test_series_stats_volatility_scales_with_interval():
         an.series_stats(series([1.0, 2.0]), 252)
 
 
-def test_sharpe_falls_with_risk_free_rate():
+def test_sharpe_falls_with_risk_free_rate() -> None:
+    """A higher risk-free rate lowers the Sharpe ratio."""
     s = random_prices(600)
     assert (
         an.series_stats(s, 252, 0.05)["sharpe_ratio"]
@@ -144,7 +160,8 @@ def test_sharpe_falls_with_risk_free_rate():
     )
 
 
-def test_relative_stats_levered_asset():
+def test_relative_stats_levered_asset() -> None:
+    """A 2x levered asset has beta 2 and correlation 1 with its benchmark."""
     bench = random_prices(500, seed=1)
     rets = bench.pct_change().fillna(0)
     asset = 100 * (1 + 2 * rets).cumprod()
@@ -155,8 +172,8 @@ def test_relative_stats_levered_asset():
     assert same["tracking_error_pct"] == 0.0 and same["information_ratio"] is None
 
 
-# ------------------------------------------------------------------ portfolio
-def test_portfolio_values_methods():
+def test_portfolio_values_methods() -> None:
+    """Buy-and-hold and constant-weight portfolios evolve differently."""
     prices = pd.DataFrame(
         {"A": [100.0, 200.0, 200.0], "B": [100.0, 100.0, 100.0]},
         index=pd.date_range("2026-01-01", periods=3),
@@ -171,7 +188,8 @@ def test_portfolio_values_methods():
         an.portfolio_values(prices, pd.Series({"A": 1.0, "B": 0.0}))
 
 
-def test_risk_contributions_sum_and_diversification():
+def test_risk_contributions_sum_and_diversification() -> None:
+    """Risk contributions sum to 100% and diversification is ~sqrt(2)."""
     a = random_prices(2000, seed=2, drift=0)
     b = random_prices(2000, seed=3, drift=0)
     prices = pd.concat([a, b], axis=1, keys=["A", "B"])

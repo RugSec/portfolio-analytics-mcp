@@ -10,11 +10,26 @@ OTHER = "Other"
 
 
 def _r(x: float, digits: int = 2) -> float:
+    """Round for output.
+
+    Args:
+        x: Value to round.
+        digits: Decimal places to keep.
+
+    Returns:
+        The rounded value.
+    """
     return round(x, digits)
 
 
 def compute_weights(amounts: list[float | None]) -> list[float]:
     """Normalise amounts to weights summing to 1 (equal weights if none given).
+
+    Args:
+        amounts: Money or weight per ETF; all None for equal weights.
+
+    Returns:
+        One weight per ETF, in input order.
 
     Raises:
         ValueError: if only some amounts are given, or any is not positive.
@@ -31,6 +46,15 @@ def compute_weights(amounts: list[float | None]) -> list[float]:
 
 
 def _matches(name: str, focus: list[str] | None) -> bool:
+    """Check whether a bucket name contains any of the focus strings.
+
+    Args:
+        name: Country or sector name.
+        focus: Case-insensitive substrings; None or empty matches everything.
+
+    Returns:
+        True if the bucket should be shown.
+    """
     if not focus:
         return True
     low = name.lower()
@@ -67,6 +91,8 @@ def aggregate_exposure(
             unavailable.append(profile["isin"])
             continue
         for row in rows:
+            # Portfolio exposure = ETF weight in the portfolio x bucket weight
+            # inside the ETF.
             contribution = weight * row["weight_pct"]
             if row["name"] == OTHER:
                 other += contribution
@@ -101,12 +127,22 @@ def aggregate_exposure(
 def aggregate_holdings(
     entries: list[dict[str, Any]], top_n: int = 15
 ) -> dict[str, Any]:
-    """Look-through on the top-10 holdings of each ETF (overlap between ETFs)."""
+    """Look through the top-10 holdings of each ETF to find stock overlap.
+
+    Args:
+        entries: ``[{"profile": dict, "weight": float}, ...]``, weights sum to 1.
+        top_n: Maximum stocks to return.
+
+    Returns:
+        ``top_stocks`` with their portfolio share and the ETFs holding them,
+        the portfolio share covered by the listed top 10s, and the stocks held
+        by more than one ETF.
+    """
     stocks: dict[str, dict[str, Any]] = {}
     for entry in entries:
         profile, weight = entry["profile"], entry["weight"]
         for h in profile["holdings"]["top_10"]:
-            key = h["isin"] or h["name"]
+            key = h["isin"] or h["name"]  # same stock across ETFs, by ISIN
             slot = stocks.setdefault(
                 key, {"name": h["name"], "isin": h["isin"], "total": 0.0, "held_by": []}
             )
@@ -139,7 +175,14 @@ def aggregate_holdings(
 
 
 def structure_breakdown(entries: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
-    """Share of the portfolio by distribution, replication, domicile, ... ."""
+    """Compute the share of the portfolio by distribution, replication, domicile...
+
+    Args:
+        entries: ``[{"profile": dict, "weight": float}, ...]``, weights sum to 1.
+
+    Returns:
+        ``{field: {value: pct_of_portfolio}}``, largest share first.
+    """
     fields = {
         "distribution_policy": lambda p: p.get("distribution_policy"),
         "replication": lambda p: p.get("replication"),
@@ -161,7 +204,17 @@ def structure_breakdown(entries: list[dict[str, Any]]) -> dict[str, dict[str, fl
 
 
 def _pick(positions: list[dict[str, Any]], field: str, fn: Any) -> dict | None:
-    """isin/name/value of the position with the max/min of ``field``."""
+    """Find the position with the max/min of ``field``.
+
+    Args:
+        positions: Rows from ``cost_and_size``.
+        field: ``"ter_pct"`` or ``"fund_size"``.
+        fn: ``max`` or ``min``.
+
+    Returns:
+        ``{"isin", "name", field}`` of that position, or None if no position
+        has the field.
+    """
     valued = [x for x in positions if x[field] is not None]
     if not valued:
         return None
@@ -177,7 +230,16 @@ def _pick(positions: list[dict[str, Any]], field: str, fn: Any) -> dict | None:
 def cost_and_size(
     entries: list[dict[str, Any]], amounts: list[float | None]
 ) -> dict[str, Any]:
-    """Weighted TER, yearly cost per ETF and fund-size flags."""
+    """Compute the weighted TER, yearly cost per ETF and fund-size flags.
+
+    Args:
+        entries: ``[{"profile": dict, "weight": float}, ...]``, weights sum to 1.
+        amounts: Money per ETF (all None when weights were equal).
+
+    Returns:
+        Per-position rows plus ``weighted_ter_pct``, ``total_annual_cost``,
+        ``most_expensive`` and ``smallest_fund``.
+    """
     have_amounts = all(a is not None for a in amounts)
     positions = []
     weighted = 0.0
@@ -209,6 +271,7 @@ def cost_and_size(
                 "flags": flags,
             }
         )
+    # Average only over ETFs with a known TER, re-scaled to their weight.
     weighted_ter = weighted / weight_with_ter if weight_with_ter else None
     return {
         "positions": positions,
@@ -229,7 +292,20 @@ def analyze_portfolio(
     focus_countries: list[str] | None = None,
     focus_sectors: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Full portfolio view: cost, size, structure, country/sector/stock exposure."""
+    """Analyse ETFs as one portfolio: cost, size, structure and exposure.
+
+    Args:
+        profiles: Parsed profiles, one per ETF.
+        amounts: Money or weight per ETF, or all None for equal weights.
+        top_n: Buckets to return per breakdown when no focus is given.
+        focus_countries: Only return countries containing one of these names.
+        focus_sectors: Only return sectors containing one of these names.
+
+    Returns:
+        ``cost_and_size``, ``structure_pct``, ``country_exposure``,
+        ``sector_exposure``, ``stock_look_through``, ``holdings_as_of`` and
+        ``notes``.
+    """
     weights = compute_weights(amounts)
     entries = [
         {"profile": p, "weight": w} for p, w in zip(profiles, weights, strict=True)
