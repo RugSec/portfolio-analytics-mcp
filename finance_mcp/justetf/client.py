@@ -26,7 +26,8 @@ MIN_INTERVAL_S = float(os.environ.get("JUSTETF_MIN_INTERVAL_S", "1.5"))
 CACHE_TTL_S = float(os.environ.get("JUSTETF_CACHE_TTL_HOURS", "24")) * 3600
 CACHE_DIR = Path(
     os.environ.get(
-        "JUSTETF_CACHE_DIR", Path.home() / ".cache" / "portfolio-analytics-mcp" / "justetf"
+        "JUSTETF_CACHE_DIR",
+        Path.home() / ".cache" / "portfolio-analytics-mcp" / "justetf",
     )
 )
 

@@ -124,6 +124,21 @@ On Windows use `.venv\\Scripts\\python.exe` with double backslashes. Restart Cla
 
 For Claude Code: `claude mcp add finance -- /absolute/path/to/.venv/bin/python -m finance_mcp`
 
+## Deploy over HTTP (Render)
+
+Set `MCP_TRANSPORT=http` to serve streamable HTTP at `/mcp` instead of stdio. The server refuses to start without `MCP_API_KEYS`, a comma-separated list of `name:token` pairs (tokens of 16+ characters), one per person so you can revoke individually:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # generate a token
+MCP_TRANSPORT=http MCP_API_KEYS="me:<token>,alice:<token>" python -m finance_mcp
+```
+
+Clients authenticate with `Authorization: Bearer <token>`, or with `https://<host>/mcp?key=<token>` for clients that only accept a URL (the token then appears in URL logs, so treat it as a secret). `/health` is the only unauthenticated path.
+
+On Render, create a Web Service from this repo ([render.yaml](render.yaml) has the settings) and add `MCP_API_KEYS` in the dashboard. Claude Code: `claude mcp add --transport http finance https://<app>.onrender.com/mcp --header "Authorization: Bearer <token>"`.
+
+Env: `PORT` (set by Render), `HOST` (default `0.0.0.0`). The server is stateless, so restarts don't break clients; the justETF disk cache is lost on each restart unless you attach a disk.
+
 ## Notes and limitations
 
 - Use Yahoo exchange suffixes: `ASML.AS` (Amsterdam), `VWCE.DE` (Xetra), `SAP.DE`, `AAPL` (US).
