@@ -1,0 +1,281 @@
+[
+ {
+  "isin": "LU0908500753",
+  "name": "Amundi Core Stoxx Europe 600 UCITS ETF Acc",
+  "tickers": [
+   "LYP6",
+   "MEUD",
+   "MEUS"
+  ],
+  "index": "STOXX® Europe 600"
+ },
+ {
+  "isin": "LU1681043599",
+  "name": "Amundi MSCI World Swap UCITS ETF EUR Acc",
+  "tickers": [
+   "AMEW",
+   "AMEX",
+   "CW8",
+   "CW8E"
+  ],
+  "index": "MSCI World"
+ },
+ {
+  "isin": "IE00B3YLTY66",
+  "name": "State Street SPDR MSCI All Country World Investable Market UCITS ETF USD Unhedged (Acc)",
+  "tickers": [
+   "IMID",
+   "IMIE",
+   "SPYI"
+  ],
+  "index": "MSCI All Country World Investable Market (ACWI IMI)"
+ },
+ {
+  "isin": "IE00BFY0GT14",
+  "name": "State Street SPDR MSCI World UCITS ETF USD Unhedged (Acc)",
+  "tickers": [
+   "SPPW",
+   "SWLD",
+   "SWRD"
+  ],
+  "index": "MSCI World"
+ },
+ {
+  "isin": "IE00B8GKDB10",
+  "name": "Vanguard FTSE All-World High Dividend Yield UCITS ETF Distributing",
+  "tickers": [
+   "VGWD",
+   "VHYD",
+   "VHYL"
+  ],
+  "index": "FTSE All-World High Dividend Yield"
+ },
+ {
+  "isin": "IE00BK5BQT80",
+  "name": "Vanguard FTSE All-World UCITS ETF (USD) Accumulating",
+  "tickers": [
+   "VWCE",
+   "VWRA",
+   "VWRP"
+  ],
+  "index": "FTSE All-World"
+ },
+ {
+  "isin": "IE00B3RBWM25",
+  "name": "Vanguard FTSE All-World UCITS ETF (USD) Distributing",
+  "tickers": [
+   "VGWL",
+   "VWRD",
+   "VWRL"
+  ],
+  "index": "FTSE All-World"
+ },
+ {
+  "isin": "IE00B945VV12",
+  "name": "Vanguard FTSE Developed Europe UCITS ETF Distributing",
+  "tickers": [
+   "VEUD",
+   "VEUR",
+   "VGEU"
+  ],
+  "index": "FTSE Developed Europe"
+ },
+ {
+  "isin": "IE00BK5BQV03",
+  "name": "Vanguard FTSE Developed World UCITS ETF Acc",
+  "tickers": [
+   "VGVF",
+   "VHVE",
+   "VHVG"
+  ],
+  "index": "FTSE Developed"
+ },
+ {
+  "isin": "IE00B3VVMM84",
+  "name": "Vanguard FTSE Emerging Markets UCITS ETF (USD) Distributing",
+  "tickers": [
+   "VDEM",
+   "VFEM"
+  ],
+  "index": "FTSE Emerging"
+ },
+ {
+  "isin": "IE00BFMXXD54",
+  "name": "Vanguard S&P 500 UCITS ETF (USD) Accumulating",
+  "tickers": [
+   "VUAA",
+   "VUAG"
+  ],
+  "index": "S&P 500®"
+ },
+ {
+  "isin": "IE00B3XXRP09",
+  "name": "Vanguard S&P 500 UCITS ETF (USD) Distributing",
+  "tickers": [
+   "VUSA",
+   "VUSD"
+  ],
+  "index": "S&P 500®"
+ },
+ {
+  "isin": "LU0274208692",
+  "name": "Xtrackers MSCI World Swap UCITS ETF 1C",
+  "tickers": [
+   "DBXW",
+   "XMWD",
+   "XMWO"
+  ],
+  "index": "MSCI World"
+ },
+ {
+  "isin": "IE00BJ0KDQ92",
+  "name": "Xtrackers MSCI World UCITS ETF 1C",
+  "tickers": [
+   "XDWD",
+   "XWLD"
+  ],
+  "index": "MSCI World"
+ },
+ {
+  "isin": "IE00B3F81R35",
+  "name": "iShares Core EUR Corporate Bond UCITS ETF (Dist)",
+  "tickers": [
+   "EUN5",
+   "IEAC",
+   "IEBC"
+  ],
+  "index": "Bloomberg Euro Corporate Bond"
+ },
+ {
+  "isin": "IE00B4WXJJ64",
+  "name": "iShares Core Euro Government Bond UCITS ETF (Dist)",
+  "tickers": [
+   "EUNH",
+   "IEGA",
+   "SEGA"
+  ],
+  "index": "Bloomberg Euro Treasury Bond"
+ },
+ {
+  "isin": "IE00BKM4GZ66",
+  "name": "iShares Core MSCI Emerging Markets IMI UCITS ETF (Acc)",
+  "tickers": [
+   "EIMI",
+   "EMIM",
+   "IS3N"
+  ],
+  "index": "MSCI Emerging Markets Investable Market (IMI)"
+ },
+ {
+  "isin": "IE00B4K48X80",
+  "name": "iShares Core MSCI Europe UCITS ETF EUR (Acc)",
+  "tickers": [
+   "EUNK",
+   "IMAE",
+   "IMEA",
+   "SMEA"
+  ],
+  "index": "MSCI Europe"
+ },
+ {
+  "isin": "IE00B4L5Y983",
+  "name": "iShares Core MSCI World UCITS ETF USD (Acc)",
+  "tickers": [
+   "EUNL",
+   "IWDA",
+   "SWDA"
+  ],
+  "index": "MSCI World"
+ },
+ {
+  "isin": "IE00B5BMR087",
+  "name": "iShares Core S&P 500 UCITS ETF USD (Acc)",
+  "tickers": [
+   "CSP1",
+   "CSPX",
+   "CSSPX",
+   "SXR8"
+  ],
+  "index": "S&P 500®"
+ },
+ {
+  "isin": "IE0031442068",
+  "name": "iShares Core S&P 500 UCITS ETF USD (Dist)",
+  "tickers": [
+   "IDUS",
+   "IUSA"
+  ],
+  "index": "S&P 500®"
+ },
+ {
+  "isin": "IE00B1XNHC34",
+  "name": "iShares Global Clean Energy Transition UCITS ETF USD (Dist)",
+  "tickers": [
+   "INRG",
+   "IQQH"
+  ],
+  "index": "S&P Global Clean Energy Transition"
+ },
+ {
+  "isin": "IE00B6R52259",
+  "name": "iShares MSCI All Country World UCITS ETF USD (Acc)",
+  "tickers": [
+   "ISAC",
+   "IUSQ",
+   "SSAC"
+  ],
+  "index": "MSCI All Country World (ACWI)"
+ },
+ {
+  "isin": "IE00BYX2JD69",
+  "name": "iShares MSCI World SRI UCITS ETF EUR (Acc)",
+  "tickers": [
+   "2B7K",
+   "SUSW"
+  ],
+  "index": "MSCI World SRI Select Reduced Fossil Fuels"
+ },
+ {
+  "isin": "IE00BF4RFH31",
+  "name": "iShares MSCI World Small Cap UCITS ETF",
+  "tickers": [
+   "IUSN",
+   "WLDS",
+   "WSML"
+  ],
+  "index": "MSCI World Small Cap"
+ },
+ {
+  "isin": "IE00B0M62Q58",
+  "name": "iShares MSCI World UCITS ETF (Dist)",
+  "tickers": [
+   "IDWR",
+   "IQQW",
+   "IWRD"
+  ],
+  "index": "MSCI World"
+ },
+ {
+  "isin": "IE00B53SZB19",
+  "name": "iShares Nasdaq 100 UCITS ETF (Acc)",
+  "tickers": [
+   "CNDX",
+   "CNX1",
+   "CSNDX",
+   "SXRV"
+  ],
+  "index": "Nasdaq 100®"
+ },
+ {
+  "isin": "IE00B4ND3602",
+  "name": "iShares Physical Gold ETC",
+  "tickers": [
+   "EGLN",
+   "IGLN",
+   "PPFB",
+   "SGLN",
+   "SLGN"
+  ],
+  "index": "Gold"
+ }
+]
