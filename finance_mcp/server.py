@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
@@ -36,6 +37,11 @@ def serve_http() -> None:
     keys = load_keys()
     if not keys:
         raise SystemExit("MCP_API_KEYS must be set when MCP_TRANSPORT=http")
+    # The default Host allow-list only admits localhost, which rejects the public
+    # hostname. DNS-rebinding protection is redundant here: every request needs a key.
+    mcp.settings.transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=False
+    )
     app = ApiKeyMiddleware(mcp.streamable_http_app(), keys)
     uvicorn.run(
         app,
