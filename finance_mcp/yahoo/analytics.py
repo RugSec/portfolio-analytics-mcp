@@ -137,7 +137,7 @@ def to_base_currency(
 
 # ------------------------------------------------------------------ data quality
 def remove_spikes(
-    prices: pd.DataFrame, threshold: float = 0.15
+    prices: pd.DataFrame, threshold: float = 0.25
 ) -> tuple[pd.DataFrame, dict[str, list[str]]]:
     """Drop one-day bad prints: a jump that is fully reversed the next period.
 
@@ -150,11 +150,12 @@ def remove_spikes(
 
     Args:
         prices: One column per symbol, oldest first.
-        threshold: Minimum relative jump (0.15 = 15%) to be considered.
+        threshold: Minimum relative jump (0.25 = 25%) to be considered.
 
     Returns:
-        ``(cleaned prices, {symbol: [removed dates]})``; removed prices become
-        NaN, which ``align_prices`` later forward-fills.
+        A tuple of the cleaned prices and a dictionary mapping symbols to the list of
+        removed dates. Removed prices become NaN, which ``align_prices`` later
+        forward-fills.
     """
     cleaned = prices.copy()
     removed: dict[str, list[str]] = {}
@@ -172,7 +173,7 @@ def remove_spikes(
             if (
                 abs(up) > threshold
                 and up * back < 0
-                and abs(v[i + 1] / prev - 1) < threshold / 3
+                and abs(v[i + 1] / prev - 1) < threshold / 5
             ):
                 bad.append(i)
                 v[i] = prev  # so the next comparison uses a sane base

@@ -2,12 +2,14 @@ services:
   - type: web
     name: portfolio-analytics-mcp
     runtime: python
-    buildCommand: pip install .
-    startCommand: python -m finance_mcp
+    buildCommand: pip install uv && uv sync --locked --no-dev
+    startCommand: .venv/bin/python -m finance_mcp
     healthCheckPath: /health
     envVars:
       - key: MCP_TRANSPORT
         value: http
+      - key: FORWARDED_ALLOW_IPS
+        value: "*" # Render's proxy IPs are not fixed; trust its X-Forwarded-For
       - key: PYTHON_VERSION
         value: 3.12.12
       - key: MCP_API_KEYS

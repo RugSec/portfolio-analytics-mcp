@@ -159,7 +159,9 @@ def resolve_isin(isin: str, base_currency: str | None = None) -> dict[str, Any]:
         except Exception:  # noqa: BLE001 - network/library errors
             hits = []
         if not hits:
-            raise JustEtfError(f"{exc}; Yahoo search found nothing either") from exc
+            raise JustEtfError(
+                f"{exc}; Yahoo search found nothing either", exc.code
+            ) from exc
         return {
             "isin": isin,
             "name": hits[0]["name"],

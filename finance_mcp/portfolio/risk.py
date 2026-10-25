@@ -21,7 +21,7 @@ from ..yahoo import data
 from ..yahoo.data import YahooError
 from .resolve import resolve_isin
 
-MAX_POSITIONS = 30
+MAX_POSITIONS = 50
 MAX_ISIN_FALLBACKS = 4
 MIN_OBSERVATIONS = 10
 
@@ -89,23 +89,6 @@ def _unique(items: list[str]) -> list[str]:
     return list(dict.fromkeys(items))
 
 
-def _justetf_code(exc: JustEtfError) -> str:
-    """Classify a failed ISIN lookup as bad input, an outage, or unknown.
-
-    Args:
-        exc: The error from justETF/Yahoo resolution.
-
-    Returns:
-        ``invalid_input``, ``upstream_unavailable`` or ``no_data``.
-    """
-    msg = str(exc)
-    if "not a valid ISIN" in msg or "check digit" in msg:
-        return "invalid_input"
-    if any(k in msg for k in ("Could not reach", "refused", "server error")):
-        return "upstream_unavailable"
-    return "no_data"
-
-
 def _resolve(
     positions: list[Position], base: str
 ) -> tuple[list[list[str]], list[dict[str, Any]]]:
@@ -133,7 +116,7 @@ def _resolve(
             r = resolve_isin(p.isin or "", base)
         except JustEtfError as exc:
             raise YahooError(
-                _justetf_code(exc),
+                exc.code,
                 f"Could not resolve ISIN {p.isin}: {exc}",
                 "Pass a Yahoo symbol instead (find it with search_symbol).",
             ) from exc

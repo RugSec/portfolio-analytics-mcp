@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from finance_mcp.justetf.client import JustEtfError
+from finance_mcp.justetf.client import JustEtfError, JustEtfErrorCode
 from tests.fakes import ISIN, tool
 
 
@@ -27,7 +27,7 @@ def test_resolve_instrument_tool(monkeypatch: pytest.MonkeyPatch) -> None:
         Raises:
             JustEtfError: Always.
         """
-        raise JustEtfError("'x' is not a valid ISIN")
+        raise JustEtfError("'x' is not a valid ISIN", JustEtfErrorCode.INVALID_INPUT)
 
     monkeypatch.setattr(ptools, "resolve_isin", fail)
     out = tool("resolve_instrument")("x")

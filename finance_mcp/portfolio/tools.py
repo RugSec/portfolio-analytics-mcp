@@ -49,7 +49,7 @@ def register(mcp: FastMCP) -> None:
         except JustEtfError as exc:
             return {
                 "error": str(exc),
-                "error_code": risk._justetf_code(exc),
+                "error_code": exc.code,
                 "hint": "Find the ticker with search_symbol instead.",
             }
 

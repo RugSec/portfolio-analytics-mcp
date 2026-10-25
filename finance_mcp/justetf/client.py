@@ -13,6 +13,7 @@ import os
 import re
 import threading
 import time
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -38,8 +39,28 @@ _lock = threading.Lock()
 _last_request = 0.0
 
 
+class JustEtfErrorCode(StrEnum):
+    """Machine-readable codes for ``JustEtfError`` (same values as ``YahooError``)."""
+
+    INVALID_INPUT = "invalid_input"
+    UPSTREAM_UNAVAILABLE = "upstream_unavailable"
+    NO_DATA = "no_data"
+
+
 class JustEtfError(Exception):
     """Raised for any expected failure (bad ISIN, not found, blocked, network)."""
+
+    def __init__(
+        self, message: str, code: JustEtfErrorCode = JustEtfErrorCode.NO_DATA
+    ) -> None:
+        """Create the error.
+
+        Args:
+            message: Human-readable explanation.
+            code: Machine-readable error code.
+        """
+        super().__init__(message)
+        self.code = code
 
 
 def normalize_isin(isin: str) -> str:
@@ -59,7 +80,10 @@ def normalize_isin(isin: str) -> str:
     """
     value = (isin or "").strip().upper()
     if not _ISIN_RE.match(value):
-        raise JustEtfError(f"'{isin}' is not a valid ISIN (expected e.g. IE00B4L5Y983)")
+        raise JustEtfError(
+            f"'{isin}' is not a valid ISIN (expected e.g. IE00B4L5Y983)",
+            JustEtfErrorCode.INVALID_INPUT,
+        )
     # ISIN check digit: letters become numbers (A=10 ... Z=35), then the Luhn
     # algorithm runs over the digit string: double every second digit from
     # the right, sum the digits, and the total must be a multiple of 10.
@@ -72,7 +96,9 @@ def normalize_isin(isin: str) -> str:
             d = d - 9 if d > 9 else d
         total += d
     if total % 10 != 0:
-        raise JustEtfError(f"'{isin}' has an invalid ISIN check digit")
+        raise JustEtfError(
+            f"'{isin}' has an invalid ISIN check digit", JustEtfErrorCode.INVALID_INPUT
+        )
     return value
 
 
@@ -116,14 +142,20 @@ def _get(client: httpx.Client, url: str, **kwargs: Any) -> httpx.Response:
             # Do not retry or work around: respect being blocked / rate limited.
             raise JustEtfError(
                 f"justETF refused the request (HTTP {resp.status_code}). "
-                "Wait a while before trying again."
+                "Wait a while before trying again.",
+                JustEtfErrorCode.UPSTREAM_UNAVAILABLE,
             )
         if resp.status_code >= 500:
-            last_exc = JustEtfError(f"justETF server error (HTTP {resp.status_code})")
+            last_exc = JustEtfError(
+                f"justETF server error (HTTP {resp.status_code})",
+                JustEtfErrorCode.UPSTREAM_UNAVAILABLE,
+            )
             time.sleep(2**attempt)
             continue
         return resp
-    raise JustEtfError(f"Could not reach justETF: {last_exc}")
+    raise JustEtfError(
+        f"Could not reach justETF: {last_exc}", JustEtfErrorCode.UPSTREAM_UNAVAILABLE
+    )
 
 
 def fetch_profile_pages(isin: str) -> tuple[str, dict[str, str]]:

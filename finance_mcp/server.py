@@ -62,7 +62,9 @@ def serve_http() -> None:
         host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "8000")),
         proxy_headers=True,
-        forwarded_allow_ips="*",
+        # Only trust X-Forwarded-For from these peers; "*" lets any client spoof
+        # its IP, so it must be opted into (e.g. behind Render's proxy).
+        forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1"),
         # The access log records the full path with query string, which would
         # write ?key=<token> credentials to the logs in clear.
         access_log=False,
