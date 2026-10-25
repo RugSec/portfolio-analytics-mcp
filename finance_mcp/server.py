@@ -63,6 +63,9 @@ def serve_http() -> None:
         port=int(os.environ.get("PORT", "8000")),
         proxy_headers=True,
         forwarded_allow_ips="*",
+        # The access log records the full path with query string, which would
+        # write ?key=<token> credentials to the logs in clear.
+        access_log=False,
     )
 
 
