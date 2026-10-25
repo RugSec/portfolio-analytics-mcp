@@ -100,6 +100,7 @@ def test_serve_http_runs_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
     server.serve_http()
     assert isinstance(seen["app"], ApiKeyMiddleware)
     assert seen["host"] == "0.0.0.0" and seen["port"] == 9999
+    assert seen["access_log"] is False  # ?key=<token> must not reach the logs
     assert not server.mcp.settings.transport_security.enable_dns_rebinding_protection  # type: ignore[union-attr]
 
 
