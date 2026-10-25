@@ -11,17 +11,17 @@ from __future__ import annotations
 
 import os
 
-from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
 from finance_mcp.auth import ApiKeyMiddleware, load_keys
+from finance_mcp.concurrency import ThreadedFastMCP
 from finance_mcp.justetf.tools import register as register_justetf
 from finance_mcp.portfolio.tools import register as register_portfolio
 from finance_mcp.yahoo.tools import register as register_yahoo
 
-mcp = FastMCP("finance", stateless_http=True)
+mcp = ThreadedFastMCP("finance", stateless_http=True)
 register_yahoo(mcp)
 register_justetf(mcp)
 register_portfolio(mcp)
