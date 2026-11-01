@@ -47,27 +47,56 @@ checks for a new release each time the server starts.
 
 **1. Connect it to Claude**
 
-Claude Code:
+Claude Code and Claude Desktop keep separate settings: set up each app you
+use.
+
+**Claude Code** (terminal and IDE extensions):
 
 ```bash
-claude mcp add finance -- uvx portfolio-analytics-mcp@latest
+claude mcp add -s user portfolio-analytics -- uvx portfolio-analytics-mcp@latest
 ```
 
-Claude Desktop: add this to `claude_desktop_config.json`, then restart the
-app. If it can't find `uvx`, use the full path that `which uvx` prints.
+`-s user` makes the tools available in every folder; without it they only
+appear in the folder where you ran the command. Check with `claude mcp list`.
 
-```json
-{
-  "mcpServers": {
-    "finance": {
-      "command": "uvx",
-      "args": ["portfolio-analytics-mcp@latest"]
-    }
-  }
-}
-```
+**Claude Desktop** (the chat app):
 
-To stay on one version instead, use `portfolio-analytics-mcp==0.2.0`.
+1. Find the full path of `uvx`: run `which uvx` (macOS/Linux) or
+   `where uvx` (Windows). Desktop apps don't see your terminal's `PATH`, so a
+   bare `uvx` usually fails.
+2. Open the config file: in Claude Desktop, **Settings → Developer → Edit
+   Config**. It is `~/Library/Application Support/Claude/claude_desktop_config.json`
+   on macOS and `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
+3. Add a `portfolio-analytics` entry inside `"mcpServers"`, using your path from step 1.
+   If the file already has other servers or settings, keep them and add
+   `portfolio-analytics` next to them (mind the commas).
+
+   ```json
+   {
+     "mcpServers": {
+       "portfolio-analytics": {
+         "command": "/opt/homebrew/bin/uvx",
+         "args": ["portfolio-analytics-mcp@latest"]
+       }
+     }
+   }
+   ```
+
+   On Windows, write the path with double backslashes, e.g.
+   `"C:\\Users\\you\\.local\\bin\\uvx.exe"`.
+
+4. Quit Claude Desktop completely (Cmd+Q on macOS, or Quit from the tray icon
+   on Windows; closing the window is not enough) and open it again. The
+   `portfolio-analytics` tools appear in new chats.
+
+If the tools don't appear, **Settings → Developer** shows the server's
+status, and its log is `~/Library/Logs/Claude/mcp-server-portfolio-analytics.log`
+(macOS) or `%APPDATA%\Claude\logs\mcp-server-portfolio-analytics.log` (Windows). The
+first start downloads Python and the dependencies and can take a minute; if
+it times out, restart the app once.
+
+To stay on one version instead of updating automatically, use
+`portfolio-analytics-mcp==0.2.0` in place of `portfolio-analytics-mcp@latest`.
 
 The server runs on your machine. Only symbols and ISINs go out, to Yahoo
 Finance and justETF; your quantities and amounts never leave it.

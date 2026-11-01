@@ -29,7 +29,9 @@ INSTRUCTIONS = (
     "future results. This project is not affiliated with Yahoo or justETF."
 )
 
-mcp = ThreadedFastMCP("finance", instructions=INSTRUCTIONS, stateless_http=True)
+mcp = ThreadedFastMCP(
+    "portfolio-analytics", instructions=INSTRUCTIONS, stateless_http=True
+)
 register_yahoo(mcp)
 register_justetf(mcp)
 register_portfolio(mcp)

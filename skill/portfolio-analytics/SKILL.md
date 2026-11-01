@@ -50,16 +50,36 @@ user install it. It needs [uv](https://docs.astral.sh/uv/), which downloads
 Python 3.12 and the server from PyPI
 ([`portfolio-analytics-mcp`](https://pypi.org/project/portfolio-analytics-mcp/)).
 
-Claude Code:
+Each client has its own MCP settings; configure the one the user is in.
+`claude mcp add` only configures Claude Code, not the Claude Desktop chat.
+
+Claude Code (`-s user` makes the tools available in every folder):
 
 ```bash
-claude mcp add finance -- uvx portfolio-analytics-mcp@latest
+claude mcp add -s user portfolio-analytics -- uvx portfolio-analytics-mcp@latest
 ```
 
-Other MCP clients (Claude Desktop, Cursor, ...): add a stdio server with
-command `uvx` and argument `portfolio-analytics-mcp@latest`, then restart the
-client. If the client can't find `uvx`, use the full path that `which uvx`
-prints.
+Claude Desktop, Cursor and other clients: add a stdio server named
+`portfolio-analytics` with argument `portfolio-analytics-mcp@latest` and, as command,
+the **full path** to `uvx` (from `which uvx` on macOS/Linux or `where uvx`
+on Windows). Desktop apps don't see the terminal's `PATH`, so a bare `uvx`
+usually fails. For Claude Desktop the file is opened from **Settings →
+Developer → Edit Config**; tell the user to keep existing entries in
+`"mcpServers"`, then quit the app completely and reopen it:
+
+```json
+{
+  "mcpServers": {
+    "portfolio-analytics": {
+      "command": "/opt/homebrew/bin/uvx",
+      "args": ["portfolio-analytics-mcp@latest"]
+    }
+  }
+}
+```
+
+The tools appear only after the client restarts or in a new session. The
+first start downloads Python and the dependencies and can take a minute.
 
 No account or API key is needed. The server runs on the user's machine and
 updates itself to the latest release when it starts.
