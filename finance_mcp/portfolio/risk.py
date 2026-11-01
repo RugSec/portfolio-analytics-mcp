@@ -21,7 +21,7 @@ from ..yahoo import data
 from ..yahoo.data import YahooError
 from .resolve import resolve_isin
 
-MAX_POSITIONS = 30
+MAX_POSITIONS = 50
 MAX_ISIN_FALLBACKS = 4
 MIN_OBSERVATIONS = 10
 
@@ -41,10 +41,15 @@ class Position(BaseModel):
         "justETF listings, stocks via Yahoo search).",
     )
     quantity: float | None = Field(
-        None, gt=0, description="Shares/units held (value = quantity x last price)."
+        None,
+        gt=0,
+        description="Shares/units held (value = quantity x price at the window's "
+        "last date).",
     )
     value: float | None = Field(
-        None, gt=0, description="Current market value in the base currency."
+        None,
+        gt=0,
+        description="Market value in the base currency at the window's last date.",
     )
 
     @model_validator(mode="after")
@@ -89,23 +94,6 @@ def _unique(items: list[str]) -> list[str]:
     return list(dict.fromkeys(items))
 
 
-def _justetf_code(exc: JustEtfError) -> str:
-    """Classify a failed ISIN lookup as bad input, an outage, or unknown.
-
-    Args:
-        exc: The error from justETF/Yahoo resolution.
-
-    Returns:
-        ``invalid_input``, ``upstream_unavailable`` or ``no_data``.
-    """
-    msg = str(exc)
-    if "not a valid ISIN" in msg or "check digit" in msg:
-        return "invalid_input"
-    if any(k in msg for k in ("Could not reach", "refused", "server error")):
-        return "upstream_unavailable"
-    return "no_data"
-
-
 def _resolve(
     positions: list[Position], base: str
 ) -> tuple[list[list[str]], list[dict[str, Any]]]:
@@ -133,7 +121,7 @@ def _resolve(
             r = resolve_isin(p.isin or "", base)
         except JustEtfError as exc:
             raise YahooError(
-                _justetf_code(exc),
+                exc.code,
                 f"Could not resolve ISIN {p.isin}: {exc}",
                 "Pass a Yahoo symbol instead (find it with search_symbol).",
             ) from exc
@@ -274,8 +262,8 @@ def analyze_portfolio_risk(
     except ValueError as exc:
         raise YahooError("fx_unavailable", str(exc)) from exc
 
-    # 3. Current value per symbol (positions on the same symbol are merged);
-    # unsized positions count 1 each, i.e. equal weights.
+    # 3. Value at the window's last date per symbol (positions on the same
+    # symbol are merged); unsized positions count 1 each, i.e. equal weights.
     values: dict[str, float] = defaultdict(float)
     for p, sym in zip(positions, chosen, strict=True):
         if p.value is not None:
@@ -402,9 +390,11 @@ def analyze_portfolio_risk(
             f"All prices converted to {base} with daily FX, so currency moves are "
             "part of the risk and return.",
             "Prices are adjusted for splits and dividends (total return).",
-            "current_holdings = today's units held through the whole window; "
-            "constant_weights = rebalanced to today's weights every period.",
-            "Risk contributions use today's weights and sum to 100%.",
+            "Values and weights refer to the last date of the window (today only "
+            "if end_date is not set); quantities are priced at that date's close.",
+            "current_holdings = those units held through the whole window; "
+            "constant_weights = rebalanced to those weights every period.",
+            "Risk contributions use those weights and sum to 100%.",
             "Past performance does not predict future results.",
         ],
     }

@@ -11,17 +11,17 @@ from __future__ import annotations
 
 import os
 
-from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
 from finance_mcp.auth import ApiKeyMiddleware, load_keys
+from finance_mcp.concurrency import ThreadedFastMCP
 from finance_mcp.justetf.tools import register as register_justetf
 from finance_mcp.portfolio.tools import register as register_portfolio
 from finance_mcp.yahoo.tools import register as register_yahoo
 
-mcp = FastMCP("finance", stateless_http=True)
+mcp = ThreadedFastMCP("finance", stateless_http=True)
 register_yahoo(mcp)
 register_justetf(mcp)
 register_portfolio(mcp)
@@ -62,7 +62,9 @@ def serve_http() -> None:
         host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "8000")),
         proxy_headers=True,
-        forwarded_allow_ips="*",
+        # Only trust X-Forwarded-For from these peers; "*" lets any client spoof
+        # its IP, so it must be opted into (e.g. behind Render's proxy).
+        forwarded_allow_ips=os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1"),
         # The access log records the full path with query string, which would
         # write ?key=<token> credentials to the logs in clear.
         access_log=False,

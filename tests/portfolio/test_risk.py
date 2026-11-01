@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from finance_mcp.justetf.client import JustEtfError
+from finance_mcp.justetf.client import JustEtfError, JustEtfErrorCode
 from finance_mcp.portfolio import risk
 from finance_mcp.portfolio.risk import Position
 from finance_mcp.yahoo import data
@@ -113,7 +113,8 @@ def test_isin_errors_are_classified(
     def down(isin: str, base: str | None) -> dict[str, Any]:
         """Fail like justETF being unreachable."""
         raise JustEtfError(
-            "Could not reach justETF: timeout; Yahoo search found nothing either"
+            "Could not reach justETF: timeout; Yahoo search found nothing either",
+            JustEtfErrorCode.UPSTREAM_UNAVAILABLE,
         )
 
     monkeypatch.setattr(risk, "resolve_isin", down)
@@ -121,8 +122,10 @@ def test_isin_errors_are_classified(
         risk.analyze_portfolio_risk([Position(isin="IE00B4L5Y983")])
     assert exc.value.code == "upstream_unavailable"
     assert (
-        risk._justetf_code(JustEtfError("'X' is not a valid ISIN")) == "invalid_input"
+        JustEtfError("'X' is not a valid ISIN", JustEtfErrorCode.INVALID_INPUT).code
+        == "invalid_input"
     )
+    assert JustEtfError("not found").code == "no_data"
 
 
 def test_portfolio_drops_bad_prints(

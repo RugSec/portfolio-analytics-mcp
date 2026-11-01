@@ -49,7 +49,7 @@ def register(mcp: FastMCP) -> None:
         except JustEtfError as exc:
             return {
                 "error": str(exc),
-                "error_code": risk._justetf_code(exc),
+                "error_code": exc.code,
                 "hint": "Find the ticker with search_symbol instead.",
             }
 
@@ -67,8 +67,11 @@ def register(mcp: FastMCP) -> None:
         """Risk and return of a whole portfolio, measured in one base currency.
 
         Positions can be stocks or ETFs, given by Yahoo symbol or ISIN, sized
-        by quantity (shares) or current value (in base currency); with
-        neither, positions are equally weighted. Prices are converted to the
+        by quantity (shares) or value (in base currency); with neither,
+        positions are equally weighted. "Current" values and weights refer
+        to the last date of the analysed window, which is not today when
+        end_date is in the past: quantity is priced at that date's close
+        and value is taken as the value on that date. Prices are converted to the
         base currency with daily FX (pence-quoted London listings handled),
         put on a common calendar, and analysed. Use analyze_portfolio
         (justETF) for cost and country/sector/stock look-through of ETFs.
@@ -85,8 +88,9 @@ def register(mcp: FastMCP) -> None:
             interval: Return frequency. Default "1wk": daily returns across
                 regions (US vs Europe) understate correlation and beta because
                 the markets close hours apart.
-            method: "current_holdings" (today's units held throughout) or
-                "constant_weights" (rebalanced to today's weights each period).
+            method: "current_holdings" (the units held at the window's last
+                date, held throughout) or "constant_weights" (rebalanced to the
+                weights at that date each period).
             risk_free_rate_pct: Annual risk-free rate in %, e.g. 2.0.
 
         Returns:

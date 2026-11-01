@@ -110,3 +110,61 @@ def test_module_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(server, "main", lambda: called.append(True))
     runpy.run_module("finance_mcp", run_name="__main__")
     assert called == [True]
+
+
+def test_sync_tools_do_not_block_event_loop() -> None:
+    """A slow sync tool runs in a thread, so concurrent calls overlap."""
+    import threading
+    import time
+
+    from finance_mcp.concurrency import ThreadedFastMCP
+
+    app = ThreadedFastMCP("t")
+    started = threading.Barrier(2, timeout=5)
+
+    @app.tool()
+    def slow() -> str:
+        """Block until both calls are running at the same time."""
+        started.wait()  # only returns if the two calls run concurrently
+        time.sleep(0.1)
+        return "done"
+
+    async def both() -> list[Any]:
+        return await asyncio.gather(
+            app.call_tool("slow", {}), app.call_tool("slow", {})
+        )
+
+    assert len(asyncio.run(both())) == 2
+
+
+def test_tool_concurrency_is_capped() -> None:
+    """No more than MAX_CONCURRENT_TOOLS sync tools run at once."""
+    import threading
+    import time
+
+    from finance_mcp import concurrency
+    from finance_mcp.concurrency import ThreadedFastMCP
+
+    app = ThreadedFastMCP("t")
+    lock = threading.Lock()
+    running = peak = 0
+
+    @app.tool()
+    def work() -> str:
+        """Track how many calls overlap."""
+        nonlocal running, peak
+        with lock:
+            running += 1
+            peak = max(peak, running)
+        time.sleep(0.05)
+        with lock:
+            running -= 1
+        return "ok"
+
+    async def many() -> None:
+        await asyncio.gather(*(app.call_tool("work", {}) for _ in range(12)))
+
+    concurrency._limiter = None  # bind a fresh limiter to this event loop
+    asyncio.run(many())
+    concurrency._limiter = None
+    assert 1 < peak <= concurrency.MAX_CONCURRENT_TOOLS

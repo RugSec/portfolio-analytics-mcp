@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -187,7 +188,7 @@ def tool(name: str) -> Callable[..., Any]:
     """
     registered = server.mcp._tool_manager.get_tool(name)
     assert registered is not None, name
-    return registered.fn
+    return inspect.unwrap(registered.fn)  # skip the thread-offloading wrapper
 
 
 FAST_INFO = {
