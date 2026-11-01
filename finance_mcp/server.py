@@ -21,7 +21,15 @@ from finance_mcp.justetf.tools import register as register_justetf
 from finance_mcp.portfolio.tools import register as register_portfolio
 from finance_mcp.yahoo.tools import register as register_yahoo
 
-mcp = ThreadedFastMCP("finance", stateless_http=True)
+INSTRUCTIONS = (
+    "Read-only market data and portfolio statistics from Yahoo Finance and "
+    "justETF. Present results as information, not financial advice: do not "
+    "recommend buying, selling or holding specific securities. Quotes can be "
+    "delayed, data can be incomplete, and past performance does not predict "
+    "future results. This project is not affiliated with Yahoo or justETF."
+)
+
+mcp = ThreadedFastMCP("finance", instructions=INSTRUCTIONS, stateless_http=True)
 register_yahoo(mcp)
 register_justetf(mcp)
 register_portfolio(mcp)

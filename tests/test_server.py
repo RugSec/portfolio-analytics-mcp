@@ -33,6 +33,12 @@ def test_all_tools_registered_read_only() -> None:
         assert tool.description, f"{tool.name} has no description"
 
 
+def test_instructions_disclaim_advice() -> None:
+    """Clients receive the not-financial-advice instructions."""
+    assert server.mcp.instructions is not None
+    assert "not financial advice" in server.mcp.instructions
+
+
 def test_health_route() -> None:
     """The health endpoint answers 'ok'."""
     resp = asyncio.run(server.health(None))  # type: ignore[arg-type]

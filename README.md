@@ -40,40 +40,41 @@ Claude picks the right tools, fetches the data and explains the result.
 
 ## Quickstart
 
-You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and
-Python 3.12.
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/). It
+downloads Python 3.12 and the dependencies on first run; no clone needed.
 
-**1. Install**
-
-```bash
-git clone https://github.com/RugSec/portfolio-analytics-mcp.git
-cd portfolio-analytics-mcp
-uv sync
-```
-
-**2. Connect it to Claude**
+**1. Connect it to Claude**
 
 Claude Code:
 
 ```bash
-claude mcp add finance -- /absolute/path/to/portfolio-analytics-mcp/.venv/bin/python -m finance_mcp
+claude mcp add finance -- uvx --from git+https://github.com/RugSec/portfolio-analytics-mcp@v0.1.0 finance-mcp
 ```
 
 Claude Desktop: add this to `claude_desktop_config.json`, then restart the
-app. On Windows use `.venv\\Scripts\\python.exe`.
+app.
 
 ```json
 {
   "mcpServers": {
     "finance": {
-      "command": "/absolute/path/to/portfolio-analytics-mcp/.venv/bin/python",
-      "args": ["-m", "finance_mcp"]
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/RugSec/portfolio-analytics-mcp@v0.1.0",
+        "finance-mcp"
+      ]
     }
   }
 }
 ```
 
-**3. Ask a question**, for example _"What is the TER of IE00B4L5Y983?"_
+The server runs on your machine. Only symbols and ISINs go out, to Yahoo
+Finance and justETF; your quantities and amounts never leave it.
+
+**2. Ask a question**, for example _"What is the TER of IE00B4L5Y983?"_
+
+To work on the code instead, see [Contributing](CONTRIBUTING.md#setup).
 
 Want to run it as a shared remote server instead? See
 [Remote deployment](docs/USER_GUIDE.md#remote-deployment-http).
@@ -81,7 +82,10 @@ Want to run it as a shared remote server instead? See
 ## Important to know
 
 - **Not financial advice.** The tools report data and statistics; past
-  performance does not predict future results.
+  performance does not predict future results. Data can be delayed,
+  incomplete or wrong, and is provided as is, without warranty.
+- **Not affiliated** with Yahoo, justETF or any fund provider. Names and
+  trademarks belong to their owners.
 - **Personal use only.** Yahoo Finance (through the unofficial
   [yfinance](https://pypi.org/project/yfinance/) library) and justETF are
   third-party sites. This server makes polite, on-demand requests
@@ -94,6 +98,8 @@ Want to run it as a shared remote server instead? See
 
 - [User guide](docs/USER_GUIDE.md): every tool, example workflows,
   configuration, remote deployment and limitations.
+- [Agent skill](skill/portfolio-analytics/SKILL.md): tells an agent when
+  and how to use the tools, and how to present results.
 - [Contributing](CONTRIBUTING.md): development setup, tests and project
   layout.
 
