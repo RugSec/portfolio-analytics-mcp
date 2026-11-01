@@ -106,3 +106,29 @@ Dependencies are declared in `pyproject.toml` and locked in `uv.lock`.
   group: bump both together.
 - Dependabot opens monthly update PRs for Python packages and GitHub
   Actions.
+
+## Releases
+
+The version comes from the git tag ([hatch-vcs](https://github.com/ofek/hatch-vcs)),
+so there is no version number to edit in `pyproject.toml`. To release from an
+up-to-date `main`:
+
+```bash
+git tag -a v0.2.0 -m "v0.2.0"
+git push origin v0.2.0
+```
+
+The [Release workflow](.github/workflows/release.yml) runs `poe ci-checks`,
+builds the package, checks that its version matches the tag and publishes it
+to [PyPI](https://pypi.org/project/portfolio-analytics-mcp/) with trusted
+publishing (no token stored). Users running `uvx portfolio-analytics-mcp@latest`
+get it the next time the server starts.
+
+- Use [semantic versioning](https://semver.org): patch for fixes, minor for
+  new tools or fields, major for removed or renamed tools.
+- PyPI never accepts the same version twice, even after deleting it. Fix a
+  bad release by tagging the next patch version.
+- Builds between tags get a development version such as
+  `0.2.1.dev3+g1a2b3c4`; PyPI rejects these, so only tags can be published.
+- `skill/portfolio-analytics/SKILL.md` has its own `version`: bump it only
+  when you change the skill and upload it to Agensi again.

@@ -47,25 +47,29 @@ statistics. Nothing here trades, places orders or moves money.
 The tools come from a local MCP server. If tools such as
 `analyze_portfolio_risk` or `get_etf_profile` are not available, help the
 user install it. It needs [uv](https://docs.astral.sh/uv/), which downloads
-Python 3.12 and the dependencies itself.
+Python 3.12 and the server from PyPI
+([`portfolio-analytics-mcp`](https://pypi.org/project/portfolio-analytics-mcp/)).
 
 Claude Code:
 
 ```bash
-claude mcp add finance -- uvx --from git+https://github.com/RugSec/portfolio-analytics-mcp@v0.1.0 finance-mcp
+claude mcp add finance -- uvx portfolio-analytics-mcp@latest
 ```
 
 Other MCP clients (Claude Desktop, Cursor, ...): add a stdio server with
-command `uvx` and arguments
-`--from git+https://github.com/RugSec/portfolio-analytics-mcp@v0.1.0 finance-mcp`,
-then restart the client.
+command `uvx` and argument `portfolio-analytics-mcp@latest`, then restart the
+client. If the client can't find `uvx`, use the full path that `which uvx`
+prints.
 
-No account or API key is needed. The server runs on the user's machine.
+No account or API key is needed. The server runs on the user's machine and
+updates itself to the latest release when it starts.
 
 ## Network access and privacy
 
 The server contacts only:
 
+- PyPI (`pypi.org`, `files.pythonhosted.org`), through uv, to install and
+  update the server.
 - Yahoo Finance (`*.finance.yahoo.com`), through the unofficial `yfinance`
   library, for prices, quotes, FX rates and fund data.
 - justETF (`www.justetf.com`), ETF profile pages, rate-limited and cached for

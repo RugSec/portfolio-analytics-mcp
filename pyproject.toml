@@ -1,8 +1,16 @@
 [project]
 name = "portfolio-analytics-mcp"
-version = "0.1.0"
+dynamic = ["version"]  # from the git tag (hatch-vcs): tag v1.2.3 -> 1.2.3
 description = "MCP server for portfolio analysis with Yahoo Finance and justETF data"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["mcp", "portfolio", "etf", "investing", "finance", "justetf", "yfinance"]
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
 requires-python = "==3.12.*"
 dependencies = [
     "mcp[cli]>=1.9.0,<2",
@@ -16,12 +24,24 @@ dependencies = [
     "uvicorn>=0.30",
 ]
 
+[project.urls]
+Homepage = "https://github.com/RugSec/portfolio-analytics-mcp"
+Documentation = "https://github.com/RugSec/portfolio-analytics-mcp/blob/main/docs/USER_GUIDE.md"
+Issues = "https://github.com/RugSec/portfolio-analytics-mcp/issues"
+
 [project.scripts]
+# Same name as the package, so `uvx portfolio-analytics-mcp` finds it.
+portfolio-analytics-mcp = "finance_mcp.server:main"
 finance-mcp = "finance_mcp.server:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+# Builds without git history (e.g. a source ZIP) get this instead of failing.
+fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.wheel]
 packages = ["finance_mcp"]
