@@ -188,7 +188,7 @@ MCP_TRANSPORT=http MCP_API_KEYS="me:<token>,alice:<token>" uv run python -m fina
 Service from your fork and set `MCP_API_KEYS` in the dashboard. Then connect:
 
 ```bash
-claude mcp add --transport http finance https://<app>.onrender.com/mcp \
+claude mcp add --transport http portfolio-analytics https://<app>.onrender.com/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
