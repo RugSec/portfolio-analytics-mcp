@@ -25,7 +25,9 @@ jobs:
       # Guard against a tag on the wrong commit or an unexpected version.
       - name: Check version matches tag
         run: |
-          expected="${GITHUB_REF_NAME#v}"
+          expected="$(uv run --with packaging python -c \
+            'from packaging.version import Version; import sys; print(Version(sys.argv[1]))' \
+            "${GITHUB_REF_NAME#v}")"
           ls dist
           test -f "dist/portfolio_analytics_mcp-${expected}-py3-none-any.whl" \
             || { echo "Built version does not match tag ${GITHUB_REF_NAME}"; exit 1; }
